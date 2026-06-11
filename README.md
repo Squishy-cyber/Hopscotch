@@ -1,4 +1,4 @@
-<h1 align="center">🥧 Butterscotch 🥧</h1>
+<h1 align="center">🐸 Hopscotch 🐸</h1>
 
 <!-- Badges, about the GitHub repository itself -->
 <p align="center">
