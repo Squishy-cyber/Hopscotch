@@ -322,6 +322,31 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 		return false;
 	}
 
+
+	// Downscale 2x to save memory (screen is only 320x240)
+	int newW = w / 2;
+	int newH = h / 2;
+	if (newW > 0 && newH > 0) {
+		uint8_t* scaled = safeMalloc(newW * newH * 4);
+		for (int y = 0; y < newH; y++) {
+			for (int x = 0; x < newW; x++) {
+				int si = (y * 2 * w + x * 2) * 4;
+				int di = (y * newW + x) * 4;
+				for (int c = 0; c < 4; c++) {
+					scaled[di + c] = (
+						pixels[si + c] +
+						pixels[si + 4 + c] +
+						pixels[si + w * 4 + c] +
+						pixels[si + w * 4 + 4 + c]
+					) / 4;
+				}
+			}
+		}
+		free(pixels);
+		pixels = scaled;
+		w = newW;
+		h = newH;
+	}
 	swr->textures[pageId] = swrCreateTexture(pixels, w, h);
 	free(pixels);
 	
@@ -1003,6 +1028,18 @@ static void swrDrawSprite(
 	uint32_t tintColor, float alpha
 )
 {
+	// Absolute Downscaled Sheet Translation
+	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	if (sw <= 0) sw = 1;
+	if (sh <= 0) sh = 1;
+	// Absolute Downscaled Sheet Translation
+	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	if (sw <= 0) sw = 1;
+	if (sh <= 0) sh = 1;
+	// Absolute Downscaled Sheet Translation
+	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	if (sw <= 0) sw = 1;
+	if (sh <= 0) sh = 1;
 	SWRenderer *swr = (SWRenderer*) renderer;
 	
 	swrTransformPosIfNeeded(swr, &dx, &dy);
@@ -1145,6 +1182,18 @@ static void swrDrawSpriteRotated(
 	float pivotY
 )
 {
+	// Absolute Downscaled Sheet Translation
+	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	if (sw <= 0) sw = 1;
+	if (sh <= 0) sh = 1;
+	// Absolute Downscaled Sheet Translation
+	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	if (sw <= 0) sw = 1;
+	if (sh <= 0) sh = 1;
+	// Absolute Downscaled Sheet Translation
+	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	if (sw <= 0) sw = 1;
+	if (sh <= 0) sh = 1;
 	SWRenderer* swr = (SWRenderer*) renderer;
 	
 	swrTransformPosIfNeeded(swr, &dx, &dy);
