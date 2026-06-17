@@ -34,6 +34,8 @@ typedef struct
 	// Window Properties
 	uint16_t width;
 	uint16_t height;
+	float scaleFactorX;
+	float scaleFactorY; // PATCH_MARKER_DYNAMIC_SCALING
 	// Framebuffer
 	uintpixel_t* fb;
 	uint16_t fbPitch; // in sizeof(uintpixel_t) units, NOT in bytes!
@@ -239,6 +241,8 @@ static SWTexture* swrCreateTexture(const uint8_t* srcBuffer, int width, int heig
 	
 	txt->width = (uint16_t) width;
 	txt->height = (uint16_t) height;
+	txt->scaleFactorX = 1.0f;
+	txt->scaleFactorY = 1.0f;
 	
 	return txt;
 }
@@ -347,7 +351,38 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 		w = newW;
 		h = newH;
 	}
+
+	// Downscale dynamically to save memory (PATCH_MARKER_DYNAMIC_SCALING)
+	float currentScaleX = 1.0f;
+	float currentScaleY = 1.0f;
+	int newW = w;
+	int newH = h;
+	if (w > 512 || h > 512) {
+		newW = w > 512 ? w / 2 : w;
+		newH = h > 512 ? h / 2 : h;
+		currentScaleX = (float)w / newW;
+		currentScaleY = (float)h / newH;
+		uint8_t* scaled = safeMalloc(newW * newH * 4);
+		for (int y = 0; y < newH; y++) {
+			for (int x = 0; x < newW; x++) {
+				int si = ((int)(y * currentScaleY) * w + (int)(x * currentScaleX)) * 4;
+				int di = (y * newW + x) * 4;
+				for (int c = 0; c < 4; c++) {
+					scaled[di + c] = pixels[si + c];
+				}
+			}
+		}
+		free(pixels);
+		pixels = scaled;
+		w = newW;
+		h = newH;
+	}
+
 	swr->textures[pageId] = swrCreateTexture(pixels, w, h);
+	if (swr->textures[pageId]) {
+		swr->textures[pageId]->scaleFactorX = currentScaleX;
+		swr->textures[pageId]->scaleFactorY = currentScaleY;
+	}
 	free(pixels);
 	
 	fprintf(stderr, "SWR: Loaded TXTR page %u (%dx%d)\n", pageId, w, h);
@@ -1028,18 +1063,18 @@ static void swrDrawSprite(
 	uint32_t tintColor, float alpha
 )
 {
-	// Absolute Downscaled Sheet Translation
-	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	// Asymmetrical Downscaled Sheet Translation (PATCH_MARKER_DYNAMIC_SCALING)
+	if (texture) {
+		sx = (int)(sx / texture->scaleFactorX);
+		sy = (int)(sy / texture->scaleFactorY);
+		sw = (int)(sw / texture->scaleFactorX);
+		sh = (int)(sh / texture->scaleFactorY);
+	}
 	if (sw <= 0) sw = 1;
 	if (sh <= 0) sh = 1;
-	// Absolute Downscaled Sheet Translation
-	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
-	if (sw <= 0) sw = 1;
-	if (sh <= 0) sh = 1;
-	// Absolute Downscaled Sheet Translation
-	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
-	if (sw <= 0) sw = 1;
-	if (sh <= 0) sh = 1;
+
+
+
 	SWRenderer *swr = (SWRenderer*) renderer;
 	
 	swrTransformPosIfNeeded(swr, &dx, &dy);
@@ -1182,18 +1217,18 @@ static void swrDrawSpriteRotated(
 	float pivotY
 )
 {
-	// Absolute Downscaled Sheet Translation
-	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
+	// Asymmetrical Downscaled Sheet Translation (PATCH_MARKER_DYNAMIC_SCALING)
+	if (texture) {
+		sx = (int)(sx / texture->scaleFactorX);
+		sy = (int)(sy / texture->scaleFactorY);
+		sw = (int)(sw / texture->scaleFactorX);
+		sh = (int)(sh / texture->scaleFactorY);
+	}
 	if (sw <= 0) sw = 1;
 	if (sh <= 0) sh = 1;
-	// Absolute Downscaled Sheet Translation
-	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
-	if (sw <= 0) sw = 1;
-	if (sh <= 0) sh = 1;
-	// Absolute Downscaled Sheet Translation
-	sx /= 2; sy /= 2; sw /= 2; sh /= 2;
-	if (sw <= 0) sw = 1;
-	if (sh <= 0) sh = 1;
+
+
+
 	SWRenderer* swr = (SWRenderer*) renderer;
 	
 	swrTransformPosIfNeeded(swr, &dx, &dy);
