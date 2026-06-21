@@ -303,39 +303,47 @@ static void swrEvictTextureFromCache(SWRenderer* swr, int textureIndex)
 
 static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 {
-        if (swr->textures[pageId])
-                return true;
+        // 1. Force a debug print statement at the VERY top of the function
+        fprintf(stderr, "SWR_DEBUG: swrEnsureTextureIsLoaded called for page %u (Current pointer: %p)\n", pageId, (void*)swr->textures[pageId]);
+        fflush(stderr);
+
+        // 2. TEMPORARILY COMMENT THIS GUARD OUT TO FORCE AN OVERWRITE TEST
+        // if (swr->textures[pageId])
+        //         return true;
 
         char filepath[256];
-        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId);
+        // Shifting index by +1 since your local assets are named 1-7
+        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId + 1);
 
         FILE* file = fopen(filepath, "rb");
         if (!file) {
                 fprintf(stderr, "swr: Error opening preprocessed asset %s\n", filepath);
-                return false; 
+                fflush(stderr);
+                return false;
         }
 
-        // Hardcoded target dimensions from our pipeline
         int w = 512;
         int h = 512;
 
         size_t pixel_count = (size_t)(w * h);
         uint16_t* pixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
-        
+
         size_t pixels_read = fread(pixels, sizeof(uint16_t), pixel_count, file);
         fclose(file);
 
         if (pixels_read != pixel_count) {
                 fprintf(stderr, "swr: Asset size mismatch for %s. Read %zu of %zu pixels.\n", filepath, pixels_read, pixel_count);
+                fflush(stderr);
                 free(pixels);
                 return false;
         }
 
-        // Call our new direct-copy function instead of the original 32-bit one
+        // Overwrite the slot directly with your optimized texture map
         swr->textures[pageId] = swrCreateTexturePreprocessed(pixels, w, h);
         free(pixels);
 
         fprintf(stderr, "SWR [OPTIMIZED]: Streamed preprocessed page %u (%dx%d) instantly.\n", pageId, w, h);
+        fflush(stderr);
         return true;
 }
 
