@@ -308,8 +308,8 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
         fflush(stderr);
 
         // 2. TEMPORARILY COMMENT THIS GUARD OUT TO FORCE AN OVERWRITE TEST
-        // if (swr->textures[pageId])
-        //         return true;
+        if (swr->textures[pageId])
+                return true;
 
         char filepath[256];
         // Shifting index by +1 since your local assets are named 1-7
