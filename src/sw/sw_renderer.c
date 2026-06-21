@@ -222,6 +222,24 @@ FORCE_INLINE int swrCeiling(float x)
 	return i + (x > (float) i);
 }
 
+static SWTexture* swrCreateTexturePreprocessed(const uint16_t* srcBuffer, int width, int height)
+{
+        SWTexture* txt = safeMalloc(sizeof(SWTexture));
+        // Allocate space for the pixels using the native type
+        txt->buffer = safeMalloc(width * height * sizeof(uintpixel_t));
+
+        if (srcBuffer)
+        {
+                // Direct memory copy! Zero translation, zero conversion math.
+                memcpy(txt->buffer, srcBuffer, width * height * sizeof(uintpixel_t));
+        }
+
+        txt->width = (uint16_t) width;
+        txt->height = (uint16_t) height;
+
+        return txt;
+}
+
 static SWTexture* swrCreateTexture(const uint8_t* srcBuffer, int width, int height)
 {
 	SWTexture* txt = safeMalloc(sizeof(SWTexture));
@@ -283,68 +301,42 @@ static void swrEvictTextureFromCache(SWRenderer* swr, int textureIndex)
 	swrFreeTexture(texture);
 }
 
-// Lazily decodes and uploads a TXTR page on first access.
-// Returns true if the texture is ready, false if it failed to decode.
 static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 {
-	if (swr->textures[pageId])
-		return true;
+        if (swr->textures[pageId])
+                return true;
 
-	DataWin* dw = swr->base.dataWin;
-	Texture* txtr = &dw->txtr.textures[pageId];
+        char filepath[256];
+        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId);
 
-	int w, h;
-	bool gm2022_5 = DataWin_isVersionAtLeast(dw, 2022, 5, 0, 0);
-	
-	uint8_t* pixels = NULL;
-	
-	do
-	{
-		pixels = ImageDecoder_decodeToRgba(txtr->blobData, (size_t) txtr->blobSize, gm2022_5, &w, &h);
-		if (pixels)
-			break;
-		
-		fprintf(stderr, "swr: Failed to decode TXTR page %u.  This is likely because we're out of memory, so evicting a texture.\n", pageId);
-		
-		int tail = swrTailTextureIndexLRU(swr, true);
-		if (tail == -1) {
-			fprintf(stderr, "swr: Looks like we can't fit this texture in memory at all. Bummer.\n");
-			break;
-		}
-		
-		swrEvictTextureFromCache(swr, tail);
-		fprintf(stderr, "swr: Evicted texture %d, trying again.\n", tail);
-	}
-	while (!pixels);
-	
-	if (pixels == nullptr) {
-		fprintf(stderr, "swr: Failed to decode TXTR page %u.\n", pageId);
-		return false;
-	}
+        FILE* file = fopen(filepath, "rb");
+        if (!file) {
+                fprintf(stderr, "swr: Error opening preprocessed asset %s\n", filepath);
+                return false; 
+        }
 
-	swr->textures[pageId] = swrCreateTexture(pixels, w, h);
-	free(pixels);
-	
-	fprintf(stderr, "SWR: Loaded TXTR page %u (%dx%d)\n", pageId, w, h);
-	
-	// add it to the LRU
-	do
-	{
-		bool added = swrAddTextureIndexToLRU(swr, pageId);
-		if (added)
-			break;
-		
-		int tail = swrTailTextureIndexLRU(swr, true);
-		if (tail == -1) {
-			fprintf(stderr, "swr: Come on now.\n");
-			assert(tail != -1);
-		}
-		
-		swrEvictTextureFromCache(swr, tail);
-	}
-	while (true);
-	
-	return true;
+        // Hardcoded target dimensions from our pipeline
+        int w = 512;
+        int h = 512;
+
+        size_t pixel_count = (size_t)(w * h);
+        uint16_t* pixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
+        
+        size_t pixels_read = fread(pixels, sizeof(uint16_t), pixel_count, file);
+        fclose(file);
+
+        if (pixels_read != pixel_count) {
+                fprintf(stderr, "swr: Asset size mismatch for %s. Read %zu of %zu pixels.\n", filepath, pixels_read, pixel_count);
+                free(pixels);
+                return false;
+        }
+
+        // Call our new direct-copy function instead of the original 32-bit one
+        swr->textures[pageId] = swrCreateTexturePreprocessed(pixels, w, h);
+        free(pixels);
+
+        fprintf(stderr, "SWR [OPTIMIZED]: Streamed preprocessed page %u (%dx%d) instantly.\n", pageId, w, h);
+        return true;
 }
 
 static void SWRenderer_init(Renderer* renderer, DataWin* dataWin)
