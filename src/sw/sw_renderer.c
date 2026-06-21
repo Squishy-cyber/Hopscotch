@@ -303,42 +303,43 @@ static void swrEvictTextureFromCache(SWRenderer* swr, int textureIndex)
 
 static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 {
-        // 1. Force a debug print statement at the VERY top of the function
+        // 1. Diagnostics at the absolute top
         fprintf(stderr, "SWR_DEBUG: swrEnsureTextureIsLoaded called for page %u (Current pointer: %p)\n", pageId, (void*)swr->textures[pageId]);
         fflush(stderr);
 
-        // 2. TEMPORARILY COMMENT THIS GUARD OUT TO FORCE AN OVERWRITE TEST
+        // 2. Safe Guard Check
         if (swr->textures[pageId])
                 return true;
 
+        // 3. Format the path (Change pageId to pageId + 1 if files are 1-indexed but engine is 0-indexed)
         char filepath[256];
-        // Shifting index by +1 since your local assets are named 1-7
-        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId + 1);
+        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId);
 
+        // 4. Stream from disk
         FILE* file = fopen(filepath, "rb");
         if (!file) {
-                fprintf(stderr, "swr: Error opening preprocessed asset %s\n", filepath);
+                fprintf(stderr, "SWR_FATAL: Could not open asset path: %s\n", filepath);
                 fflush(stderr);
                 return false;
         }
 
         int w = 512;
         int h = 512;
-
         size_t pixel_count = (size_t)(w * h);
         uint16_t* pixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
 
         size_t pixels_read = fread(pixels, sizeof(uint16_t), pixel_count, file);
         fclose(file);
 
+        // 5. Size Validation
         if (pixels_read != pixel_count) {
-                fprintf(stderr, "swr: Asset size mismatch for %s. Read %zu of %zu pixels.\n", filepath, pixels_read, pixel_count);
+                fprintf(stderr, "SWR_FATAL: Size mismatch for %s. Expected %zu pixels, read %zu.\n", filepath, pixel_count, pixels_read);
                 fflush(stderr);
                 free(pixels);
                 return false;
         }
 
-        // Overwrite the slot directly with your optimized texture map
+        // 6. Assign to vtable/texture cache slot
         swr->textures[pageId] = swrCreateTexturePreprocessed(pixels, w, h);
         free(pixels);
 
