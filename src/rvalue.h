@@ -225,8 +225,7 @@ static inline RValue RValue_makeStructWeak(Instance* inst) {
 
 // Takes ownership AND bumps the refCount. The returned RValue decRefs on free.
 static inline RValue RValue_makeStructAndIncRef(Instance* inst) {
-    RValue rv = {0};
-    rv.type = RVALUE_STRUCT;
+    RValue rv = { .type = RVALUE_STRUCT }; //change
     rv.ownsReference = true;
     rv.gmlStackType = GML_TYPE_VARIABLE;
     rv.structInst = inst;
@@ -235,8 +234,7 @@ static inline RValue RValue_makeStructAndIncRef(Instance* inst) {
 }
 
 static inline RValue RValue_makeAssetRef(int32_t assetIndex, uint8_t assetType) {
-    RValue rv = {0};
-    rv.type = RVALUE_ASSETREF;
+    RValue rv = { .type = RVALUE_ASSETREF };
     rv.assetRefType = assetType;
     rv.gmlStackType = GML_TYPE_INT32;
     rv.int32 = assetIndex;
