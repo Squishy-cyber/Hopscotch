@@ -314,7 +314,6 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
         int masterH = 2048;
         int sliceSize = 512;
         size_t master_pixel_count = (size_t)(masterW * masterH);
-	size_t read_count = 0; // <--- DECLARE IT SAFELY HERE AT THE TOP!
 
         // Allocate the full 2048x2048 master canvas buffer (8MB temporary buffer)
         uint16_t* masterPixels = (uint16_t*)safeMalloc(master_pixel_count * sizeof(uint16_t));
