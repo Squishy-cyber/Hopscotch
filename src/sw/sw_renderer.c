@@ -339,9 +339,14 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
                                 // If a slice is missing (e.g. at the very end of assets), clear block to black
                                 memset(slicePixels, 0, slice_pixel_count * sizeof(uint16_t));
                         } else {
-                                fread(slicePixels, sizeof(uint16_t), slice_pixel_count, file);
-				(void)read_count; // Explicitly silence any unused variable warnings
+                                size_t read_count = fread(slicePixels, sizeof(uint16_t), slice_pixel_count, file);
                                 fclose(file);
+
+				// Actually check it to force the compiler to accept the result evaluation
+                                if (read_count == 0) {
+                                        fprintf(stderr, "SWR_WARN: Failed to read slice or empty file: %s\n", filepath);
+                                        fflush(stderr);
+                                }
                         }
 
                         // Copy the 512x512 slice into its exact coordinate spot inside the 2048x2048 canvas
