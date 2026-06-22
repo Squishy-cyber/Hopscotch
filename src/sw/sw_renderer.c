@@ -301,76 +301,43 @@ static void swrEvictTextureFromCache(SWRenderer* swr, int textureIndex)
 	swrFreeTexture(texture);
 }
 
-static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
+static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t subPageId)
 {
-        fprintf(stderr, "SWR_DEBUG: swrEnsureTextureIsLoaded called for master page %u\n", pageId);
-        fflush(stderr);
-
-        // 1. Safe Guard: If this master page is already stitched and loaded, we're done!
-        if (swr->textures[pageId])
+        // 1. Safe Guard Check
+        if (swr->textures[subPageId])
                 return true;
 
-        int masterW = 2048;
-        int masterH = 2048;
-        int sliceSize = 512;
-        size_t master_pixel_count = (size_t)(masterW * masterH);
+        // 2. Format the path for the exact 512x512 slice index
+        char filepath[256];
+        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", subPageId);
 
-        // Allocate the full 2048x2048 master canvas buffer (8MB temporary buffer)
-        uint16_t* masterPixels = (uint16_t*)safeMalloc(master_pixel_count * sizeof(uint16_t));
-
-        // Find the starting sub-page index for this master page
-        // (e.g., master page 0 -> sub-page 0; master page 1 -> sub-page 16)
-        uint32_t startSubPage = pageId * 16; 
-
-        // Temporarily allocate a 512x512 buffer to read files into
-        size_t slice_pixel_count = (size_t)(sliceSize * sliceSize);
-        uint16_t* slicePixels = (uint16_t*)safeMalloc(slice_pixel_count * sizeof(uint16_t));
-
-        // 2. Stitch the 4x4 grid (16 files) into the master canvas
-        uint32_t currentSubPage = startSubPage;
-        for (int gridY = 0; gridY < 4; gridY++) {
-                for (int gridX = 0; gridX < 4; gridX++) {
-                        char filepath[256];
-                        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", currentSubPage);
-
-                        FILE* file = fopen(filepath, "rb");
-                        if (!file) {
-                                // If a slice is missing (e.g. at the very end of assets), clear block to black
-                                memset(slicePixels, 0, slice_pixel_count * sizeof(uint16_t));
-                        } else {
-                                size_t read_count = fread(slicePixels, sizeof(uint16_t), slice_pixel_count, file);
-                                fclose(file);
-
-				// Actually check it to force the compiler to accept the result evaluation
-                                if (read_count == 0) {
-                                        fprintf(stderr, "SWR_WARN: Failed to read slice or empty file: %s\n", filepath);
-                                        fflush(stderr);
-                                }
-                        }
-
-                        // Copy the 512x512 slice into its exact coordinate spot inside the 2048x2048 canvas
-                        for (int y = 0; y < sliceSize; y++) {
-                                int destY = (gridY * sliceSize) + y;
-                                int destX = (gridX * sliceSize);
-                                
-                                uint16_t* destPtr = &masterPixels[(destY * masterW) + destX];
-                                uint16_t* srcPtr = &slicePixels[y * sliceSize];
-                                
-                                memcpy(destPtr, srcPtr, sliceSize * sizeof(uint16_t));
-                        }
-
-                        currentSubPage++;
-                }
+        FILE* file = fopen(filepath, "rb");
+        if (!file) {
+                fprintf(stderr, "SWR_FATAL: Could not open sub-page path: %s\n", filepath);
+                fflush(stderr);
+                return false;
         }
 
-        // Free our temporary slice reader
-        free(slicePixels);
+        int w = 512;
+        int h = 512;
+        size_t pixel_count = (size_t)(w * h);
+        uint16_t* pixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
 
-        // 3. Register the freshly reconstructed master page texture
-        swr->textures[pageId] = swrCreateTexturePreprocessed(masterPixels, masterW, masterH);
-        free(masterPixels);
+        size_t pixels_read = fread(pixels, sizeof(uint16_t), pixel_count, file);
+        fclose(file);
 
-        fprintf(stderr, "SWR [SUCCESS]: Successfully stitched and loaded master page %u from 16 sub-pages.\n", pageId);
+        if (pixels_read != pixel_count) {
+                fprintf(stderr, "SWR_FATAL: Size mismatch for %s. Expected %zu, read %zu.\n", filepath, pixel_count, pixels_read);
+                fflush(stderr);
+                free(pixels);
+                return false;
+        }
+
+        // 3. Register the 512x512 page into its exact slot
+        swr->textures[subPageId] = swrCreateTexturePreprocessed(pixels, w, h);
+        free(pixels);
+
+        fprintf(stderr, "SWR_DEBUG: Successfully lazy-loaded live 512x512 sub-page %u (RAM footprint: 512KB)\n", subPageId);
         fflush(stderr);
         return true;
 }
