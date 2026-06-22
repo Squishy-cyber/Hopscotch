@@ -22,10 +22,11 @@
 
 typedef struct
 {
-	uintpixel_t* buffer;
-	uint16_t width, height;
-}
-SWTexture;
+        // 16 pointers representing a 4x4 grid of 512x512 sub-tiles (8MB total space maximum)
+        uintpixel_t* slices[16];
+        uint16_t width, height;
+        uint32_t masterPageId;
+} SWTexture;
 
 typedef struct
 {
@@ -222,21 +223,15 @@ FORCE_INLINE int swrCeiling(float x)
 	return i + (x > (float) i);
 }
 
-static SWTexture* swrCreateTexturePreprocessed(const uint16_t* srcBuffer, int width, int height)
+static SWTexture* swrCreateTexturePreprocessed(uint32_t pageId, int width, int height)
 {
-        SWTexture* txt = safeMalloc(sizeof(SWTexture));
-        // Allocate space for the pixels using the native type
-        txt->buffer = safeMalloc(width * height * sizeof(uintpixel_t));
-
-        if (srcBuffer)
-        {
-                // Direct memory copy! Zero translation, zero conversion math.
-                memcpy(txt->buffer, srcBuffer, width * height * sizeof(uintpixel_t));
-        }
-
+        SWTexture* txt = safeCalloc(1, sizeof(SWTexture));
         txt->width = (uint16_t) width;
         txt->height = (uint16_t) height;
+        txt->masterPageId = pageId;
 
+        // Note: The slices array is completely NULL initialized via safeCalloc.
+        // No heavy pixel allocation happens here anymore!
         return txt;
 }
 
@@ -267,6 +262,59 @@ static void swrFreeTexture(SWTexture* texture)
 	free(texture);
 }
 
+static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex, int sliceSize)
+{
+        uint32_t targetFileId = (masterPageId - 1) * 16 + sliceIndex;
+
+        char filepath[256];
+        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
+
+        FILE* file = fopen(filepath, "rb");
+        if (!file) {
+                // If a game isn't sliced at all, it might just look for a single un-sliced file.
+                // We handle a fallback clean allocation here so it doesn't crash.
+                return safeCalloc(sliceSize * sliceSize, sizeof(uintpixel_t)); 
+        }
+
+        size_t pixel_count = (size_t)(sliceSize * sliceSize);
+        uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
+
+        size_t read_count = fread(pixels, sizeof(uintpixel_t), pixel_count, file);
+        fclose(file);
+
+        return pixels;
+}
+
+static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
+{
+        if (x < 0 || x >= texture->width || y < 0 || y >= texture->height) {
+                return 0;
+        }
+
+        // Define a base slice size (e.g., 512).
+        // If the texture is natively smaller than 512, clamp the slice size to its native width.
+        int sliceSize = (texture->width < 512) ? texture->width : 512;
+
+        int sliceX = x / sliceSize;
+        int sliceY = y / sliceSize;
+        int slicesWide = texture->width / sliceSize;
+        if (slicesWide == 0) slicesWide = 1;
+
+        int sliceIndex = (sliceY * slicesWide) + sliceX;
+
+        // Safety check to prevent array overflow on the 16-slot pointer array
+        if (sliceIndex < 0 || sliceIndex >= 16) return 0;
+
+        if (texture->slices[sliceIndex] == NULL) {
+                // Pass the dynamic slice size down to the disk loader
+                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, sliceSize);
+        }
+
+        int localX = x % sliceSize;
+        int localY = y % sliceSize;
+        return texture->slices[sliceIndex][(localY * sliceSize) + localX];
+}
+
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
 {
 	uint32_t newIndex = (swr->textureIndexLRUHead + 1) % TEXTURE_LRU_LENGTH;
@@ -274,7 +322,7 @@ static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
 		// about to collide with tail from the other side -- nope.
 		return false;
 	}
-	
+
 	swr->textureIndexLRU[swr->textureIndexLRUHead] = textureIndex;
 	swr->textureIndexLRUHead = newIndex;
 	return true;
@@ -301,43 +349,64 @@ static void swrEvictTextureFromCache(SWRenderer* swr, int textureIndex)
 	swrFreeTexture(texture);
 }
 
-static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t subPageId)
+static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 {
-        // 1. Safe Guard Check
-        if (swr->textures[subPageId])
+        if (swr->textures[pageId])
                 return true;
 
-        // 2. Format the path for the exact 512x512 slice index
-        char filepath[256];
-        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", subPageId);
+        DataWin* dwin = swr->base.dataWin;
+        
+        // Grab the authentic texture dimensions parsed from the data.win file!
+        // (Assuming fields are named width and height, adjust based on your txtr struct)
+        int nativeWidth = dwin->txtr.items[pageId].width;
+        int nativeHeight = dwin->txtr.items[pageId].height;
 
-        FILE* file = fopen(filepath, "rb");
-        if (!file) {
-                fprintf(stderr, "SWR_FATAL: Could not open sub-page path: %s\n", filepath);
-                fflush(stderr);
-                return false;
-        }
+        // Fallback safety limits just in case a texture item doesn't have dimensions populated
+        if (nativeWidth <= 0) nativeWidth = 2048;
+        if (nativeHeight <= 0) nativeHeight = 2048;
 
-        int w = 512;
-        int h = 512;
-        size_t pixel_count = (size_t)(w * h);
-        uint16_t* pixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
+        swr->textures[pageId] = swrCreateTexturePreprocessed(pageId, nativeWidth, nativeHeight);
+        
+        fprintf(stderr, "SWR_DEBUG: Registered dynamic virtual canvas for page %u (%dx%d)\n",static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
+{
+        if (swr->textures[pageId])
+                return true;
 
-        size_t pixels_read = fread(pixels, sizeof(uint16_t), pixel_count, file);
-        fclose(file);
+        DataWin* dwin = swr->base.dataWin;
+        
+        // Grab the authentic texture dimensions parsed from the data.win file!
+        // (Assuming fields are named width and height, adjust based on your txtr struct)
+        int nativeWidth = dwin->txtr.items[pageId].width;
+        int nativeHeight = dwin->txtr.items[pageId].height;
 
-        if (pixels_read != pixel_count) {
-                fprintf(stderr, "SWR_FATAL: Size mismatch for %s. Expected %zu, read %zu.\n", filepath, pixel_count, pixels_read);
-                fflush(stderr);
-                free(pixels);
-                return false;
-        }
+        // Fallback safety limits just in case a texture item doesn't have dimensions populated
+        if (nativeWidth <= 0) nativeWidth = 2048;
+        if (nativeHeight <= 0) nativeHeight = 2048;
 
-        // 3. Register the 512x512 page into its exact slot
-        swr->textures[subPageId] = swrCreateTexturePreprocessed(pixels, w, h);
-        free(pixels);
+        swr->textures[pageId] = swrCreateTexturePreprocessed(pageId, nativeWidth, nativeHeight);
+        
+        fprintf(stderr, "SWR_DEBUG: Registered dynamic virtual canvas for page %u (%dx%d)\n",
+                pageId, nativeWidth, nativeHeight);
+        fflush(stderr);
+ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
+{
+        if (swr->textures[pageId])
+                return true;
 
-        fprintf(stderr, "SWR_DEBUG: Successfully lazy-loaded live 512x512 sub-page %u (RAM footprint: 512KB)\n", subPageId);
+        // Assume standard full sheet sizing for high-res native assets.
+        // The sparse loader will handle scaling down if the game gives a smaller layout.
+        int nativeWidth = 2048; 
+        int nativeHeight = 2048;
+
+        swr->textures[pageId] = swrCreateTexturePreprocessed(pageId, nativeWidth, nativeHeight);
+        
+        fprintf(stderr, "SWR_DEBUG: Registered virtual sparse canvas for page %u\n", pageId);
+        fflush(stderr);
+        return true;
+}
+       return true;
+}
+                pageId, nativeWidth, nativeHeight);
         fflush(stderr);
         return true;
 }
@@ -956,50 +1025,43 @@ static void swrDrawSpriteInternal(
 	fixedp_t oys2 = oys * ystep;
 	fixedp_t ixs2 = ixs * xstep;
 	fixedp_t iys2 = iys * ystep;
-	
 	if (sw == dw)
-	{
-		fixedp_t ys2 = (fixedp_t) iys2;
-		for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
-		{
-			uintpixel_t* dstline;
-			const uintpixel_t* srcline;
-			dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
-			if (dh == sh)
-				srcline = &texture->buffer[(sy + ys) * texture->width + sx];
-			else
-				srcline = &texture->buffer[(sy + (int)(ys2 >> fp_prec)) * texture->width + sx];
-			
-			for (int x = 0, xs = ixs; x < dw; x++, xs += oxs)
-			{
-				uintpixel_t pixel = srcline[xs];
-				if (opaque(pixel))
-					alphaBlend(&dstline[x], tint(tintColor, pixel), alpha);
-			}
-		}
-	}
-	else
-	{
-		fixedp_t ys2 = iys2;
-		for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
-		{
-			uintpixel_t* dstline;
-			const uintpixel_t* srcline;
-			dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
-			if (dh == sh)
-				srcline = &texture->buffer[(sy + ys) * texture->width + sx];
-			else
-				srcline = &texture->buffer[(sy + (int)(ys2 >> fp_prec)) * texture->width + sx];
-			
-			fixedp_t xs2 = ixs2;
-			for (int x = 0, xs = ixs; x < dw; x++, xs += oxs, xs2 += oxs2)
-			{
-				uintpixel_t pixel = srcline[(int)(xs2 >> fp_prec)];
-				if (opaque(pixel))
-					alphaBlend(&dstline[x], tint(tintColor, pixel), alpha);
-			}
-		}
-	}
+        {
+                fixedp_t ys2 = (fixedp_t) iys2;
+                for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
+                {
+                        uintpixel_t* dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
+                        int ty = sy + (dh == sh ? ys : (int)(ys2 >> fp_prec));
+
+                        for (int x = 0, xs = ixs; x < dw; x++, xs += oxs)
+                        {
+                                int tx = sx + xs;
+                                uintpixel_t pixel = swrGetVirtualTexel(texture, tx, ty);
+                                
+                                if (opaque(pixel))
+                                        alphaBlend(&dstline[x], tint(tintColor, pixel), alpha);
+                        }
+                }
+        }
+        else
+        {
+                fixedp_t ys2 = iys2;
+                for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
+                {
+                        uintpixel_t* dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
+                        int ty = sy + (dh == sh ? ys : (int)(ys2 >> fp_prec));
+
+                        fixedp_t xs2 = ixs2;
+                        for (int x = 0, xs = ixs; x < dw; x++, xs += oxs, xs2 += oxs2)
+                        {
+                                int tx = sx + (int)(xs2 >> fp_prec);
+                                uintpixel_t pixel = swrGetVirtualTexel(texture, tx, ty);
+                                
+                                if (opaque(pixel))
+                                        alphaBlend(&dstline[x], tint(tintColor, pixel), alpha);
+                        }
+                }
+        }
 }
 
 static void swrDrawSprite(
@@ -1028,117 +1090,118 @@ static void swrDrawSprite(
 }
 
 static void swrDrawSpriteRotatedInternal(
-	Renderer* renderer, int dx, int dy, int dw, int dh,
-	SWTexture* texture, int sx, int sy, int sw, int sh,
-	uintpixel_t tintColor, int alpha,
-	float angleDeg,
-	float pivotX,
-	float pivotY
+        Renderer* renderer, int dx, int dy, int dw, int dh,
+        SWTexture* texture, int sx, int sy, int sw, int sh,
+        uintpixel_t tintColor, int alpha,
+        float angleDeg,
+        float pivotX,
+        float pivotY
 )
 {
-	SWRenderer* swr = (SWRenderer*) renderer;
-	float angleRad = -angleDeg * M_PI / 180.0f;
-	
-	bool flipX = false, flipY = false;
-	if (dw < 0) { dw = -dw; dx -= dw; pivotX = dw - pivotX; flipX = true; }
-	if (dh < 0) { dh = -dh; dy -= dh; pivotY = dh - pivotY; flipY = true; }
-	
-	float cosA = cosf(angleRad);
-	float sinA = sinf(angleRad);
-	
-	float cnrx[4], cnry[4];
-	cnrx[0] = cnrx[3] = dx;
-	cnry[0] = cnry[1] = dy;
-	cnrx[1] = cnrx[2] = dx + dw;
-	cnry[2] = cnry[3] = dy + dh;
-	
-	float pxa = pivotX + dx;
-	float pya = pivotY + dy;
-	
-	float minXf = FLT_MAX, minYf = FLT_MAX, maxXf = -FLT_MAX, maxYf = -FLT_MAX;
-	for (int i = 0; i < 4; i++)
-	{
-		float cxi = cnrx[i] - pxa;
-		float cyi = cnry[i] - pya;
-		float rx = cosA * cxi - sinA * cyi + pxa;
-		float ry = sinA * cxi + cosA * cyi + pya;
-		if (minXf > rx) minXf = rx;
-		if (maxXf < rx) maxXf = rx;
-		if (minYf > ry) minYf = ry;
-		if (maxYf < ry) maxYf = ry;
-	}
+        SWRenderer* swr = (SWRenderer*) renderer;
+        float angleRad = -angleDeg * M_PI / 180.0f;
 
-	// minX, minY, maxX, maxY now represent an AABB of pixels we should loop over
-	int minX = swrFloor(minXf);
-	int minY = swrFloor(minYf);
-	int maxX = swrCeiling(maxXf);
-	int maxY = swrCeiling(maxYf);
-	
-	// basic out-of-bound checks
-	if (maxX < swr->portX) return;
-	if (maxY < swr->portY) return;
-	if (minX >= swr->maxX) return;
-	if (minY >= swr->maxY) return;
-	
-	// however, we'll need to clip it against out of bounds first
-	int minXc = minX, minYc = minY, maxXc = maxX, maxYc = maxY;
-	int minx = swr->portX, miny = swr->portY, maxx = swr->portX + swr->portW, maxy = swr->portY + swr->portH;
-	
-	if (minXc < minx) minXc = minx;
-	if (minYc < miny) minYc = miny;
-	if (maxXc >= maxx) maxXc = maxx;
-	if (maxYc >= maxy) maxYc = maxy;
-	
-	// some final clip checks
-	if (minXc >= maxXc || minYc >= maxYc) return;
-	
-	int sox = flipX ? sw - 1 : 0;
-	int soy = flipY ? sh - 1 : 0;
-	int six = flipX ? -1 : 1;
-	int siy = flipY ? -1 : 1;
-	
-	float sw_dw = (float) sw / dw;
-	float sh_dh = (float) sh / dh;
-	
-	for (int cy = minYc; cy < maxYc; cy++)
-	{
-		uintpixel_t *dstline = &swr->fb[cy * swr->fbPitch];
-		for (int cx = minXc; cx < maxXc; cx++)
-		{
-			// we need to determine the texture-space coordinate of cx/cy
-			float ox = (float) cx + 0.5f - pxa;
-			float oy = (float) cy + 0.5f - pya;
-			
-			// "undo" the rotation
-			float lx =  cosA * ox + sinA * oy;
-			float ly = -sinA * ox + cosA * oy;
-			
-			// turn it into a texture-local coordinate
-			lx += pxa - dx;
-			ly += pya - dy;
-			
-			if (lx < 0 || ly < 0 || lx >= (float) dw || ly >= (float) dh) continue;
-			
-			lx = lx * sw_dw;
-			ly = ly * sh_dh;
-			
-			int tx = (int)(sox + lx * six);
-			int ty = (int)(soy + ly * siy);
-			
-			if (tx < 0) tx = 0;
-			if (ty < 0) ty = 0;
-			if (tx >= sw) tx = sw - 1;
-			if (ty >= sh) ty = sh - 1;
-			
-			tx += sx;
-			ty += sy;
-			
-			uintpixel_t src = texture->buffer[ty * texture->width + tx];
-			
-			if (opaque(src))
-				alphaBlend(&dstline[cx], tint(tintColor, src), alpha);
-		}
-	}
+        bool flipX = false, flipY = false;
+        if (dw < 0) { dw = -dw; dx -= dw; pivotX = dw - pivotX; flipX = true; }
+        if (dh < 0) { dh = -dh; dy -= dh; pivotY = dh - pivotY; flipY = true; }
+
+        float cosA = cosf(angleRad);
+        float sinA = sinf(angleRad);
+
+        float cnrx[4], cnry[4];
+        cnrx[0] = cnrx[3] = dx;
+        cnry[0] = cnry[1] = dy;
+        cnrx[1] = cnrx[2] = dx + dw;
+        cnry[2] = cnry[3] = dy + dh;
+
+        float pxa = pivotX + dx;
+        float pya = pivotY + dy;
+
+        float minXf = FLT_MAX, minYf = FLT_MAX, maxXf = -FLT_MAX, maxYf = -FLT_MAX;
+        for (int i = 0; i < 4; i++)
+        {
+                float cxi = cnrx[i] - pxa;
+                float cyi = cnry[i] - pya;
+                float rx = cosA * cxi - sinA * cyi + pxa;
+                float ry = sinA * cxi + cosA * cyi + pya;
+                if (minXf > rx) minXf = rx;
+                if (maxXf < rx) maxXf = rx;
+                if (minYf > ry) minYf = ry;
+                if (maxYf < ry) maxYf = ry;
+        }
+
+        // minX, minY, maxX, maxY now represent an AABB of pixels we should loop over
+        int minX = swrFloor(minXf);
+        int minY = swrFloor(minYf);
+        int maxX = swrCeiling(maxXf);
+        int maxY = swrCeiling(maxYf);
+
+        // basic out-of-bound checks
+        if (maxX < swr->portX) return;
+        if (maxY < swr->portY) return;
+        if (minX >= swr->maxX) return;
+        if (minY >= swr->maxY) return;
+
+        // however, we'll need to clip it against out of bounds first
+        int minXc = minX, minYc = minY, maxXc = maxX, maxYc = maxY;
+        int minx = swr->portX, miny = swr->portY, maxx = swr->portX + swr->portW, maxy = swr->portY + swr->portH;
+
+        if (minXc < minx) minXc = minx;
+        if (minYc < miny) minYc = miny;
+        if (maxXc >= maxx) maxXc = maxx;
+        if (maxYc >= maxy) maxYc = maxy;
+
+        // some final clip checks
+        if (minXc >= maxXc || minYc >= maxYc) return;
+
+        int sox = flipX ? sw - 1 : 0;
+        int soy = flipY ? sh - 1 : 0;
+        int six = flipX ? -1 : 1;
+        int siy = flipY ? -1 : 1;
+
+        float sw_dw = (float) sw / dw;
+        float sh_dh = (float) sh / dh;
+
+        for (int cy = minYc; cy < maxYc; cy++)
+        {
+                uintpixel_t *dstline = &swr->fb[cy * swr->fbPitch];
+                for (int cx = minXc; cx < maxXc; cx++)
+                {
+                        // we need to determine the texture-space coordinate of cx/cy
+                        float ox = (float) cx + 0.5f - pxa;
+                        float oy = (float) cy + 0.5f - pya;
+
+                        // "undo" the rotation
+                        float lx =  cosA * ox + sinA * oy;
+                        float ly = -sinA * ox + cosA * oy;
+
+                        // turn it into a texture-local coordinate
+                        lx += pxa - dx;
+                        ly += pya - dy;
+
+                        if (lx < 0 || ly < 0 || lx >= (float) dw || ly >= (float) dh) continue;
+
+                        lx = lx * sw_dw;
+                        ly = ly * sh_dh;
+
+                        int tx = (int)(sox + lx * six);
+                        int ty = (int)(soy + ly * siy);
+
+                        if (tx < 0) tx = 0;
+                        if (ty < 0) ty = 0;
+                        if (tx >= sw) tx = sw - 1;
+                        if (ty >= sh) ty = sh - 1;
+
+                        tx += sx;
+                        ty += sy;
+
+                        // Dynamic, bound-crossing pixel lazy load check!
+                        uintpixel_t src = swrGetVirtualTexel(texture, tx, ty);
+
+                        if (opaque(src))
+                                alphaBlend(&dstline[cx], tint(tintColor, src), alpha);
+                }
+        }
 }
 
 static void swrDrawSpriteRotated(
