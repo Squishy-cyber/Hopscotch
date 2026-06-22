@@ -339,6 +339,7 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
                                 memset(slicePixels, 0, slice_pixel_count * sizeof(uint16_t));
                         } else {
                                 fread(slicePixels, sizeof(uint16_t), slice_pixel_count, file);
+				(void)read_count; // Explicitly silence any unused variable warnings
                                 fclose(file);
                         }
 
