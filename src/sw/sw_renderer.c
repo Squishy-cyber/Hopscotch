@@ -313,7 +313,7 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
 
         // 3. Format the path (Change pageId to pageId + 1 if files are 1-indexed but engine is 0-indexed)
         char filepath[256];
-        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId);
+        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", pageId - 1);
 
         // 4. Stream from disk
         FILE* file = fopen(filepath, "rb");
