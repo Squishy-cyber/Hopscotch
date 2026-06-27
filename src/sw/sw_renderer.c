@@ -325,12 +325,18 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         if (sliceIndex < 0 || sliceIndex >= 16) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, sliceSize);
+                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex);
         }
 
         int localX = x % sliceSize;
         int localY = y % sliceSize;
-        return texture->slices[sliceIndex][(localY * sliceSize) + localX];
+
+        // Explicitly treat the loaded block as an array of 2-byte (16-bit) elements 
+        // to match the exact byte-stride written out by the PowerShell preprocessor.
+        uint16_t* raw16Slice = (uint16_t*)texture->slices[sliceIndex];
+        uint16_t packedPixel = raw16Slice[(localY * sliceSize) + localX];
+
+        return (uintpixel_t)packedPixel;
 }
 
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
