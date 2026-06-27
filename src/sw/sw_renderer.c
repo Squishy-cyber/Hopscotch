@@ -22,7 +22,7 @@
 
 typedef struct
 {
-        // 16 pointers representing a 4x4 grid of 512x512 sub-tiles (8MB total space maximum)
+        uintpixel_t* buffer; // Keep this for dynamic/surface textures!
         uintpixel_t* slices[16];
         uint16_t width, height;
         uint32_t masterPageId;
@@ -258,8 +258,16 @@ static SWTexture* swrCreateTexture(const uint8_t* srcBuffer, int width, int heig
 
 static void swrFreeTexture(SWTexture* texture)
 {
-	free(texture->buffer);
-	free(texture);
+        if (!texture) return;
+        if (texture->buffer) {
+                free(texture->buffer);
+        }
+        for (int i = 0; i < 16; i++) {
+                if (texture->slices[i]) {
+                        free(texture->slices[i]);
+                }
+        }
+        free(texture);
 }
 
 static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex, int sliceSize)
@@ -273,13 +281,13 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
         if (!file) {
                 // If a game isn't sliced at all, it might just look for a single un-sliced file.
                 // We handle a fallback clean allocation here so it doesn't crash.
-                return safeCalloc(sliceSize * sliceSize, sizeof(uintpixel_t)); 
+                return safeCalloc(sliceSize * sliceSize, sizeof(uintpixel_t));
         }
 
         size_t pixel_count = (size_t)(sliceSize * sliceSize);
         uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
 
-        size_t read_count = fread(pixels, sizeof(uintpixel_t), pixel_count, file);
+        fread(pixels, sizeof(uintpixel_t), pixel_count, file);
         fclose(file);
 
         return pixels;
@@ -291,8 +299,12 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
                 return 0;
         }
 
-        // Define a base slice size (e.g., 512).
-        // If the texture is natively smaller than 512, clamp the slice size to its native width.
+        // If this texture was allocated directly as a standard continuous buffer (like a surface)
+        if (texture->buffer != NULL) {
+                return texture->buffer[y * texture->width + x];
+        }
+
+        // Otherwise, run our beautiful virtual slicing logic!
         int sliceSize = (texture->width < 512) ? texture->width : 512;
 
         int sliceX = x / sliceSize;
@@ -302,11 +314,9 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
 
         int sliceIndex = (sliceY * slicesWide) + sliceX;
 
-        // Safety check to prevent array overflow on the 16-slot pointer array
         if (sliceIndex < 0 || sliceIndex >= 16) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                // Pass the dynamic slice size down to the disk loader
                 texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, sliceSize);
         }
 
@@ -354,58 +364,13 @@ static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
         if (swr->textures[pageId])
                 return true;
 
-        DataWin* dwin = swr->base.dataWin;
-        
-        // Grab the authentic texture dimensions parsed from the data.win file!
-        // (Assuming fields are named width and height, adjust based on your txtr struct)
-        int nativeWidth = dwin->txtr.items[pageId].width;
-        int nativeHeight = dwin->txtr.items[pageId].height;
-
-        // Fallback safety limits just in case a texture item doesn't have dimensions populated
-        if (nativeWidth <= 0) nativeWidth = 2048;
-        if (nativeHeight <= 0) nativeHeight = 2048;
-
-        swr->textures[pageId] = swrCreateTexturePreprocessed(pageId, nativeWidth, nativeHeight);
-        
-        fprintf(stderr, "SWR_DEBUG: Registered dynamic virtual canvas for page %u (%dx%d)\n",static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
-{
-        if (swr->textures[pageId])
-                return true;
-
-        DataWin* dwin = swr->base.dataWin;
-        
-        // Grab the authentic texture dimensions parsed from the data.win file!
-        // (Assuming fields are named width and height, adjust based on your txtr struct)
-        int nativeWidth = dwin->txtr.items[pageId].width;
-        int nativeHeight = dwin->txtr.items[pageId].height;
-
-        // Fallback safety limits just in case a texture item doesn't have dimensions populated
-        if (nativeWidth <= 0) nativeWidth = 2048;
-        if (nativeHeight <= 0) nativeHeight = 2048;
-
-        swr->textures[pageId] = swrCreateTexturePreprocessed(pageId, nativeWidth, nativeHeight);
-        
-        fprintf(stderr, "SWR_DEBUG: Registered dynamic virtual canvas for page %u (%dx%d)\n",
-                pageId, nativeWidth, nativeHeight);
-        fflush(stderr);
- static bool swrEnsureTextureIsLoaded(SWRenderer* swr, uint32_t pageId)
-{
-        if (swr->textures[pageId])
-                return true;
-
-        // Assume standard full sheet sizing for high-res native assets.
-        // The sparse loader will handle scaling down if the game gives a smaller layout.
-        int nativeWidth = 2048; 
+        // Fallback to standard sizing safely
+        int nativeWidth = 2048;
         int nativeHeight = 2048;
 
         swr->textures[pageId] = swrCreateTexturePreprocessed(pageId, nativeWidth, nativeHeight);
         
-        fprintf(stderr, "SWR_DEBUG: Registered virtual sparse canvas for page %u\n", pageId);
-        fflush(stderr);
-        return true;
-}
-       return true;
-}
+        fprintf(stderr, "SWR_DEBUG: Registered dynamic virtual canvas for page %u (%dx%d)\n",
                 pageId, nativeWidth, nativeHeight);
         fflush(stderr);
         return true;
