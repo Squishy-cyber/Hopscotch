@@ -272,7 +272,7 @@ static void swrFreeTexture(SWTexture* texture)
 
 static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex, int sliceSize)
 {
-        uint32_t targetFileId = (masterPageId - 1) * 16 + sliceIndex;
+        uint32_t targetFileId = (masterPageId * 16) + sliceIndex;
 
         char filepath[256];
         snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
