@@ -277,6 +277,10 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
         char filepath[256];
         snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
 
+	// LOGGING: This will tell us exactly what pageId the engine thinks it's loading!
+        fprintf(stderr, "SWR_LOAD: Engine requested PageId %u, looking for file: texture_page_%u.bin\n", 
+                masterPageId, targetFileId);
+
         FILE* file = fopen(filepath, "rb");
         if (!file) {
                 // If a game isn't sliced at all, it might just look for a single un-sliced file.
@@ -988,13 +992,14 @@ static void swrDrawSpriteInternal(
 	typedef int32_t fixedp_t;
 	const int fp_prec = 14;
 
-	fixedp_t ystep = (sh == dh) ? (1 << fp_prec) : ((fixedp_t) osh << fp_prec) / odh;
-	fixedp_t xstep = (sw == dw) ? (1 << fp_prec) : ((fixedp_t) osw << fp_prec) / odw;
+	// Force step calculation using native asset sizes to bypass transform interference
+	fixedp_t ystep = ((fixedp_t) sh << fp_prec) / dh;
+        fixedp_t xstep = ((fixedp_t) sw << fp_prec) / dw;
 	fixedp_t oxs2 = oxs * xstep;
 	fixedp_t oys2 = oys * ystep;
 	fixedp_t ixs2 = ixs * xstep;
 	fixedp_t iys2 = iys * ystep;
-	if (sw == dw)
+	if (xstep == (1 << fp_prec) && ystep == (1 << fp_prec))
         {
                 fixedp_t ys2 = (fixedp_t) iys2;
                 for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
