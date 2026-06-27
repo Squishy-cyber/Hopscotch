@@ -311,26 +311,34 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
                 return texture->buffer[y * texture->width + x];
         }
 
-        // Otherwise, run our beautiful virtual slicing logic!
-        int sliceSize = (texture->width < 512) ? texture->width : 512;
+        // Hard guarantee: If the texture is smaller than a single slice anyway, 
+        // it must live entirely in slice 0.
+        if (texture->width <= 512 && texture->height <= 512) {
+                if (texture->slices[0] == NULL) {
+                        texture->slices[0] = swrStreamSliceFromDisk(texture->masterPageId, 0, 512);
+                }
+                return texture->slices[0][(y * 512) + x];
+        }
 
-        int sliceX = x / sliceSize;
-        int sliceY = y / sliceSize;
-        int slicesWide = texture->width / sliceSize;
+        // Ultra-fast bitwise math for large master sheets (512 is 2^9)
+        int sliceX = x >> 9; 
+        int sliceY = y >> 9;
+        int slicesWide = texture->width >> 9;
         if (slicesWide == 0) slicesWide = 1;
 
         int sliceIndex = (sliceY * slicesWide) + sliceX;
 
+        // Strict boundary safety rail
         if (sliceIndex < 0 || sliceIndex >= 16) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, sliceSize);
+                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, 512);
         }
 
-        int localX = x % sliceSize;
-        int localY = y % sliceSize;
+        int localX = x & 511;
+        int localY = y & 511;
 
-        return texture->slices[sliceIndex][(localY * sliceSize) + localX];
+        return texture->slices[sliceIndex][(localY << 9) + localX];
 }
 
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
