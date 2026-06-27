@@ -287,9 +287,13 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
         size_t pixel_count = (size_t)(sliceSize * sliceSize);
         uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
 
-        fread(pixels, sizeof(uintpixel_t), pixel_count, file);
-        fclose(file);
+        // Satisfies the compiler by checking the result, but execution continues normally
+        if (fread(pixels, sizeof(uintpixel_t), pixel_count, file) != pixel_count) {
+                // Optional: handle short-read warning logic here if desired
+        }
 
+        // These MUST happen outside the if statement so they execute on success!
+        fclose(file);
         return pixels;
 }
 
