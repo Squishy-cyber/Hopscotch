@@ -277,27 +277,36 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
         char filepath[256];
         snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
 
-	// LOGGING: This will tell us exactly what pageId the engine thinks it's loading!
         fprintf(stderr, "SWR_LOAD: Engine requested PageId %u, looking for file: texture_page_%u.bin\n", 
                 masterPageId, targetFileId);
 
+        size_t pixel_count = (size_t)(sliceSize * sliceSize);
+
         FILE* file = fopen(filepath, "rb");
         if (!file) {
-                // If a game isn't sliced at all, it might just look for a single un-sliced file.
-                // We handle a fallback clean allocation here so it doesn't crash.
-                return safeCalloc(sliceSize * sliceSize, sizeof(uintpixel_t));
+                // Fallback clean zeroed allocation to prevent crashes if file missing
+                return safeCalloc(pixel_count, sizeof(uintpixel_t));
         }
 
-        size_t pixel_count = (size_t)(sliceSize * sliceSize);
-        uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
+        // Allocate a temporary buffer to read the exact 16-bit (2-byte) pixel bytes from disk
+        uint16_t* diskPixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
 
-        // Satisfies the compiler by checking the result, but execution continues normally
-        if (fread(pixels, sizeof(uintpixel_t), pixel_count, file) != pixel_count) {
+        if (fread(diskPixels, sizeof(uint16_t), pixel_count, file) != pixel_count) {
                 // Optional: handle short-read warning logic here if desired
         }
-
-        // These MUST happen outside the if statement so they execute on success!
         fclose(file);
+
+        // Now allocate the final engine buffer (which could be 32-bit uintpixel_t)
+        uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
+
+        // Copy and widen the 16-bit raw data directly into the engine's pixel array type
+        for (size_t i = 0; i < pixel_count; i++) {
+                pixels[i] = (uintpixel_t)diskPixels[i];
+        }
+
+        // Free our temporary disk buffer
+        free(diskPixels);
+
         return pixels;
 }
 
