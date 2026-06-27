@@ -288,25 +288,15 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
                 return safeCalloc(pixel_count, sizeof(uintpixel_t));
         }
 
-        // Allocate a temporary buffer to read the exact 16-bit (2-byte) pixel bytes from disk
-        uint16_t* diskPixels = (uint16_t*)safeMalloc(pixel_count * sizeof(uint16_t));
-
-        if (fread(diskPixels, sizeof(uint16_t), pixel_count, file) != pixel_count) {
-                // Optional: handle short-read warning logic here if desired
-        }
-        fclose(file);
-
-        // Now allocate the final engine buffer (which could be 32-bit uintpixel_t)
+        // Allocate memory directly for native engine pixels
         uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
 
-        // Copy and widen the 16-bit raw data directly into the engine's pixel array type
-        for (size_t i = 0; i < pixel_count; i++) {
-                pixels[i] = (uintpixel_t)diskPixels[i];
+        // Fast binary read directly into memory chunk
+        if (fread(pixels, sizeof(uintpixel_t), pixel_count, file) != pixel_count) {
+                // Optional: handle short-read warning logic here if desired
         }
 
-        // Free our temporary disk buffer
-        free(diskPixels);
-
+        fclose(file);
         return pixels;
 }
 
@@ -334,19 +324,14 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         if (sliceIndex < 0 || sliceIndex >= 16) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                // Fixed: Added sliceSize as the 3rd parameter
                 texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, sliceSize);
         }
 
         int localX = x % sliceSize;
         int localY = y % sliceSize;
 
-        // Explicitly treat the loaded block as an array of 2-byte (16-bit) elements 
-        // to match the exact byte-stride written out by the PowerShell preprocessor.
-        uint16_t* raw16Slice = (uint16_t*)texture->slices[sliceIndex];
-        uint16_t packedPixel = raw16Slice[(localY * sliceSize) + localX];
-
-        return (uintpixel_t)packedPixel;
+        // Native 32-bit indexing - clean, direct, and zero math overhead!
+        return texture->slices[sliceIndex][(localY * sliceSize) + localX];
 }
 
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
