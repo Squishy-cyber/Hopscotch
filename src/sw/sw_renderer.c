@@ -325,7 +325,8 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         if (sliceIndex < 0 || sliceIndex >= 16) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex);
+                // Fixed: Added sliceSize as the 3rd parameter
+                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, sliceSize);
         }
 
         int localX = x % sliceSize;
