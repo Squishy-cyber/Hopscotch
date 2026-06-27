@@ -330,19 +330,7 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         int localX = x % sliceSize;
         int localY = y % sliceSize;
 
-        // Grab the raw 32-bit pixel from our slice memory
-        uintpixel_t rawPixel = texture->slices[sliceIndex][(localY * sliceSize) + localX];
-
-        // Swap the Red (highest 8 bits) and Blue (third 8 bits) channels to fix the layout inversion
-        uint8_t r = (rawPixel >> 24) & 0xFF;
-        uint8_t g = (rawPixel >> 16) & 0xFF;
-        uint8_t b = (rawPixel >> 8)  & 0xFF;
-        uint8_t a = rawPixel         & 0xFF;
-
-        // Reconstruct into the correct engine format (swapping R and B positions)
-        uintpixel_t finalPixel = (b << 24) | (g << 16) | (r << 8) | a;
-
-        return finalPixel;
+        return texture->slices[sliceIndex][(localY * sliceSize) + localX];
 }
 
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
