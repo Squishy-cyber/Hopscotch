@@ -20,6 +20,8 @@
 
 #define SURFACE_MAX_COUNT 64
 
+static FILE* g_TextureArchive = NULL;
+
 typedef struct
 {
         uintpixel_t* buffer; // Keep this for dynamic/surface textures!
@@ -281,18 +283,22 @@ typedef struct {
 static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex, int sliceSize)
 {
         uint32_t masterPageId = parentTex->masterPageId;
-        
-        // 256x256 layout means a max of 64 slices per master sheet
         uint32_t targetFileId = (masterPageId * 64) + sliceIndex;
-        char filepath[256];
-        snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
 
         size_t pixel_count = (size_t)(sliceSize * sliceSize);
-        FILE* file = fopen(filepath, "rb");
-        if (!file) {
+        size_t slice_byte_size = pixel_count * sizeof(uintpixel_t);
+
+        // Lazily open the master archive ONCE and keep it open forever
+        if (!g_TextureArchive) {
+                g_TextureArchive = fopen("/roms/butterscotch/texture_archive.pak", "rb");
+        }
+
+        // Fallback safety guard if the archive file is missing completely
+        if (!g_TextureArchive) {
                 return (uintpixel_t*)safeCalloc(pixel_count, sizeof(uintpixel_t));
         }
 
+        // --- SELF-CONTAINED AUTOMATIC EVICTION PIPELINE ---
         static TrackedSlice allocationTable[MAX_ACTIVE_SLICES];
         static int totalAllocatedSlices = 0;
         static int evictionTrackerIndex = 0;
@@ -301,26 +307,29 @@ static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex,
                 int searchCount = 0;
                 while (searchCount < MAX_ACTIVE_SLICES) {
                         TrackedSlice target = allocationTable[evictionTrackerIndex];
-
                         if (target.tex && target.tex->slices[target.sliceIdx]) {
                                 free(target.tex->slices[target.sliceIdx]);
                                 target.tex->slices[target.sliceIdx] = NULL;
-
                                 evictionTrackerIndex = (evictionTrackerIndex + 1) % MAX_ACTIVE_SLICES;
                                 break;
                         }
-
                         evictionTrackerIndex = (evictionTrackerIndex + 1) % MAX_ACTIVE_SLICES;
                         searchCount++;
                 }
         }
 
-        uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
-        size_t read_bytes = fread(pixels, sizeof(uintpixel_t), pixel_count, file);
+        // --- ULTRA FAST MATHEMATICAL OFFSET SEEK ---
+        // Jump directly to: targetFileId * 256KB
+        long byteOffset = (long)(targetFileId * slice_byte_size);
+        fseek(g_TextureArchive, byteOffset, SEEK_SET);
+
+        uintpixel_t* pixels = (uintpixel_t*)safeMalloc(slice_byte_size);
+        size_t read_bytes = fread(pixels, sizeof(uintpixel_t), pixel_count, g_TextureArchive);
         if (read_bytes != pixel_count) {
                 memset(pixels + read_bytes, 0, (pixel_count - read_bytes) * sizeof(uintpixel_t));
         }
-        fclose(file);
+
+        // NOTE: We do NOT call fclose(file) anymore! We keep it open.
 
         if (totalAllocatedSlices < MAX_ACTIVE_SLICES) {
                 allocationTable[totalAllocatedSlices].tex = parentTex;
