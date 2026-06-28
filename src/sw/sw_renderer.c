@@ -277,25 +277,29 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
         char filepath[256];
         snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
 
-        fprintf(stderr, "SWR_LOAD: Engine requested PageId %u, looking for file: texture_page_%u.bin\n", 
-                masterPageId, targetFileId);
-
         size_t pixel_count = (size_t)(sliceSize * sliceSize);
 
         FILE* file = fopen(filepath, "rb");
         if (!file) {
-                // Fallback clean zeroed allocation to prevent crashes if file missing
-                return safeCalloc(pixel_count, sizeof(uintpixel_t));
+                // Return a clean blank tile so the engine doesn't crash
+                return (uintpixel_t*)safeCalloc(pixel_count, sizeof(uintpixel_t));
         }
 
-        // Allocate memory directly for native engine pixels
+        // Track how much memory we are actively consuming
+        static bitcount = 0;
+        bitcount++;
+        if (bitcount % 16 == 0) {
+                fprintf(stderr, "BUTTERSCOTCH_MEM: Lazy-loaded another texture chunk block! Total calls: %d\n", bitcount);
+        }
+
         uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
 
-        // Fast binary read directly into memory chunk
-        if (fread(pixels, sizeof(uintpixel_t), pixel_count, file) != pixel_count) {
-                // Optional: handle short-read warning logic here if desired
+        size_t read_bytes = fread(pixels, sizeof(uintpixel_t), pixel_count, file);
+        if (read_bytes != pixel_count) {
+                // Clear out unread space to prevent reading unitialized memory garbage
+                memset(pixels + read_bytes, 0, (pixel_count - read_bytes) * sizeof(uintpixel_t));
         }
-
+        
         fclose(file);
         return pixels;
 }
