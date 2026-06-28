@@ -23,7 +23,7 @@
 typedef struct
 {
         uintpixel_t* buffer; // Keep this for dynamic/surface textures!
-        uintpixel_t* slices[16];
+        uintpixel_t* slices[64];
         uint16_t width, height;
         uint32_t masterPageId;
 } SWTexture;
@@ -270,8 +270,8 @@ static void swrFreeTexture(SWTexture* texture)
         free(texture);
 }
 
-// Define the safe upper cap for concurrently loaded chunks in RAM (e.g., 48 MB)
-#define MAX_ACTIVE_SLICES 48
+// Budgeting 128 slices at 256KB each = Exactly 32MB maximum texture RAM footprint!
+#define MAX_ACTIVE_SLICES 128
 
 typedef struct {
         SWTexture* tex;
@@ -280,10 +280,10 @@ typedef struct {
 
 static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex, int sliceSize)
 {
-        // Pull masterPageId out of the parent structure context
         uint32_t masterPageId = parentTex->masterPageId;
         
-        uint32_t targetFileId = (masterPageId * 16) + sliceIndex;
+        // 256x256 layout means a max of 64 slices per master sheet
+        uint32_t targetFileId = (masterPageId * 64) + sliceIndex;
         char filepath[256];
         snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
 
@@ -293,26 +293,19 @@ static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex,
                 return (uintpixel_t*)safeCalloc(pixel_count, sizeof(uintpixel_t));
         }
 
-        // --- SELF-CONTAINED AUTOMATIC EVICTION PIPELINE ---
         static TrackedSlice allocationTable[MAX_ACTIVE_SLICES];
         static int totalAllocatedSlices = 0;
         static int evictionTrackerIndex = 0;
 
-        // If we are at our RAM ceiling limit, evict a slice to clear space
         if (totalAllocatedSlices >= MAX_ACTIVE_SLICES) {
                 int searchCount = 0;
                 while (searchCount < MAX_ACTIVE_SLICES) {
                         TrackedSlice target = allocationTable[evictionTrackerIndex];
 
-                        // Verify that this texture container still exists and contains the live pointer
                         if (target.tex && target.tex->slices[target.sliceIdx]) {
                                 free(target.tex->slices[target.sliceIdx]);
                                 target.tex->slices[target.sliceIdx] = NULL;
 
-                                fprintf(stderr, "BUTTERSCOTCH_LRU: Evicted Page %u [Slice %d] to clear RAM.\n",
-                                        target.tex->masterPageId, target.sliceIdx);
-                                
-                                // Advance the eviction target index pointer for the next run cycle
                                 evictionTrackerIndex = (evictionTrackerIndex + 1) % MAX_ACTIVE_SLICES;
                                 break;
                         }
@@ -329,13 +322,11 @@ static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex,
         }
         fclose(file);
 
-        // --- REGISTER NEW ALLOCATION TRACKING ENTRY ---
         if (totalAllocatedSlices < MAX_ACTIVE_SLICES) {
                 allocationTable[totalAllocatedSlices].tex = parentTex;
                 allocationTable[totalAllocatedSlices].sliceIdx = sliceIndex;
                 totalAllocatedSlices++;
         } else {
-                // Overwrite the oldest tracking entry slot in our circular layout ring
                 int registerIndex = (evictionTrackerIndex == 0) ? (MAX_ACTIVE_SLICES - 1) : (evictionTrackerIndex - 1);
                 allocationTable[registerIndex].tex = parentTex;
                 allocationTable[registerIndex].sliceIdx = sliceIndex;
@@ -350,41 +341,36 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
                 return 0;
         }
 
-        // If this texture was allocated directly as a standard continuous buffer (like a surface)
         if (texture->buffer != NULL) {
                 return texture->buffer[y * texture->width + x];
         }
 
-        // Hard guarantee: If the texture is smaller than a single slice anyway,
-        // it must live entirely in slice 0.
-        if (texture->width <= 512 && texture->height <= 512) {
+        // Small textures living entirely in a 256x256 boundary box
+        if (texture->width <= 256 && texture->height <= 256) {
                 if (texture->slices[0] == NULL) {
-                        // Pass 'texture' context instead of just masterPageId
-                        texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 512);
+                        texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 256);
                 }
-                return texture->slices[0][(y * 512) + x];
+                return texture->slices[0][(y * 256) + x];
         }
 
-        // Ultra-fast bitwise math for large master sheets (512 is 2^9)
-        int sliceX = x >> 9;
-        int sliceY = y >> 9;
-        int slicesWide = texture->width >> 9;
+        // Fast bitwise math for 256x256 chunks (256 is 2^8)
+        int sliceX = x >> 8;
+        int sliceY = y >> 8;
+        int slicesWide = texture->width >> 8;
         if (slicesWide == 0) slicesWide = 1;
 
         int sliceIndex = (sliceY * slicesWide) + sliceX;
 
-        // Strict boundary safety rail
-        if (sliceIndex < 0 || sliceIndex >= 16) return 0;
+        if (sliceIndex < 0 || sliceIndex >= 64) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                // Pass 'texture' context instead of just masterPageId
-                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture, sliceIndex, 512);
+                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture, sliceIndex, 256);
         }
 
-        int localX = x & 511;
-        int localY = y & 511;
+        int localX = x & 255;
+        int localY = y & 255;
 
-        return texture->slices[sliceIndex][(localY << 9) + localX];
+        return texture->slices[sliceIndex][(localY << 8) + localX];
 }
 
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
