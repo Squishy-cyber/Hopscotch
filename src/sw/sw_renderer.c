@@ -286,7 +286,7 @@ static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex
         }
 
         // Track how much memory we are actively consuming
-        static bitcount = 0;
+        static int bitcount = 0;
         bitcount++;
         if (bitcount % 16 == 0) {
                 fprintf(stderr, "BUTTERSCOTCH_MEM: Lazy-loaded another texture chunk block! Total calls: %d\n", bitcount);
