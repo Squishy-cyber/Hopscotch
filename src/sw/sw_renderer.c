@@ -289,10 +289,10 @@ static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex,
         size_t slice_byte_size = pixel_count * sizeof(uintpixel_t);
 
 	// Lazily open the master archive ONCE and keep it open forever
-        if (!g_TextureArchive) {
+	if (!g_TextureArchive) {
                 g_TextureArchive = fopen("/roms/butterscotch/texture_archive.pak", "rb");
                 if (!g_TextureArchive) {
-                        fprintf(stderr, "BUTTERSCOTCH_ERROR: Could not open /roms/butterscotch/texture_archive.pak! Errcode: %d\n", errno);
+                        fprintf(stderr, "BUTTERSCOTCH_ERROR: Could not open /roms/butterscotch/texture_archive.pak!\n");
                 } else {
                         fprintf(stderr, "BUTTERSCOTCH_SUCCESS: Master texture archive opened successfully!\n");
                 }
