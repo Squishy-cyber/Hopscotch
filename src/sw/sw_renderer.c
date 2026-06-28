@@ -25,7 +25,7 @@ static FILE* g_TextureArchive = NULL;
 typedef struct
 {
         uintpixel_t* buffer; // Keep this for dynamic/surface textures!
-        uintpixel_t* slices[64];
+        uint16_t* slices[64];
         uint16_t width, height;
         uint32_t masterPageId;
 } SWTexture;
@@ -272,7 +272,7 @@ static void swrFreeTexture(SWTexture* texture)
         free(texture);
 }
 
-// Budgeting 128 slices at 256KB each = Exactly 32MB maximum texture RAM footprint!
+// 128 active slices at 128KB each = Only 16MB texture footprint! Plenty of safety cushion!
 #define MAX_ACTIVE_SLICES 128
 
 typedef struct {
@@ -280,30 +280,23 @@ typedef struct {
         int sliceIdx;
 } TrackedSlice;
 
-static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex, int sliceSize)
+static uint16_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex, int sliceSize)
 {
         uint32_t masterPageId = parentTex->masterPageId;
         uint32_t targetFileId = (masterPageId * 64) + sliceIndex;
 
         size_t pixel_count = (size_t)(sliceSize * sliceSize);
-        size_t slice_byte_size = pixel_count * sizeof(uintpixel_t);
+        // CHANGED: Calculated based on 16-bit structures (2 bytes per pixel)
+        size_t slice_byte_size = pixel_count * sizeof(uint16_t);
 
-	// Lazily open the master archive ONCE and keep it open forever
-	if (!g_TextureArchive) {
-                g_TextureArchive = fopen("/roms/butterscotch/texture_archive.pak", "rb");
-                if (!g_TextureArchive) {
-                        fprintf(stderr, "BUTTERSCOTCH_ERROR: Could not open /roms/butterscotch/texture_archive.pak!\n");
-                } else {
-                        fprintf(stderr, "BUTTERSCOTCH_SUCCESS: Master texture archive opened successfully!\n");
-                }
-        }
-
-        // Fallback safety guard if the archive file is missing completely
         if (!g_TextureArchive) {
-                return (uintpixel_t*)safeCalloc(pixel_count, sizeof(uintpixel_t));
+                g_TextureArchive = fopen("/roms/butterscotch/texture_archive.pak", "rb");
         }
 
-        // --- SELF-CONTAINED AUTOMATIC EVICTION PIPELINE ---
+        if (!g_TextureArchive) {
+                return (uint16_t*)safeCalloc(pixel_count, sizeof(uint16_t));
+        }
+
         static TrackedSlice allocationTable[MAX_ACTIVE_SLICES];
         static int totalAllocatedSlices = 0;
         static int evictionTrackerIndex = 0;
@@ -323,18 +316,14 @@ static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex,
                 }
         }
 
-        // --- ULTRA FAST MATHEMATICAL OFFSET SEEK ---
-        // Jump directly to: targetFileId * 256KB
         long byteOffset = (long)(targetFileId * slice_byte_size);
         fseek(g_TextureArchive, byteOffset, SEEK_SET);
 
-        uintpixel_t* pixels = (uintpixel_t*)safeMalloc(slice_byte_size);
-        size_t read_bytes = fread(pixels, sizeof(uintpixel_t), pixel_count, g_TextureArchive);
+        uint16_t* pixels = (uint16_t*)safeMalloc(slice_byte_size);
+        size_t read_bytes = fread(pixels, sizeof(uint16_t), pixel_count, g_TextureArchive);
         if (read_bytes != pixel_count) {
-                memset(pixels + read_bytes, 0, (pixel_count - read_bytes) * sizeof(uintpixel_t));
+                memset(pixels + read_bytes, 0, (pixel_count - read_bytes) * sizeof(uint16_t));
         }
-
-        // NOTE: We do NOT call fclose(file) anymore! We keep it open.
 
         if (totalAllocatedSlices < MAX_ACTIVE_SLICES) {
                 allocationTable[totalAllocatedSlices].tex = parentTex;
@@ -359,22 +348,26 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
                 return texture->buffer[y * texture->width + x];
         }
 
-        // Small textures living entirely in a 256x256 boundary box
         if (texture->width <= 256 && texture->height <= 256) {
                 if (texture->slices[0] == NULL) {
                         texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 256);
                 }
-                return texture->slices[0][(y * 256) + x];
+                uint16_t p16 = texture->slices[0][(y * 256) + x];
+                if (p16 == 0) return 0; // Transparent fallback
+                
+                // Unpack RGB565 back into standard 32-bit format
+                uint32_t r = ((p16 >> 11) & 0x1F) << 3;
+                uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
+                uint32_t b = (p16         & 0x1F) << 3;
+                return (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
         }
 
-        // Fast bitwise math for 256x256 chunks (256 is 2^8)
         int sliceX = x >> 8;
         int sliceY = y >> 8;
         int slicesWide = texture->width >> 8;
         if (slicesWide == 0) slicesWide = 1;
 
         int sliceIndex = (sliceY * slicesWide) + sliceX;
-
         if (sliceIndex < 0 || sliceIndex >= 64) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
@@ -384,7 +377,16 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         int localX = x & 255;
         int localY = y & 255;
 
-        return texture->slices[sliceIndex][(localY << 8) + localX];
+        uint16_t p16 = texture->slices[sliceIndex][(localY << 8) + localX];
+        if (p16 == 0) return 0;
+
+        // Unpack RGB565 back into standard 32-bit format on-the-fly
+        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
+        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
+        uint32_t b = (p16         & 0x1F) << 3;
+        
+        // Return matching 32-bit colors structure
+        return (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
 }
 
 static bool swrAddTextureIndexToLRU(SWRenderer* swr, int textureIndex)
