@@ -1292,23 +1292,40 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
 		fprintf(stderr, "%s: could not ensure texture is loaded, tpagIndex: %d, pageId: %d\n", __func__, tpagIndex, pageId);
 		return;
 	}
-	
+
 	int sx = tpag->sourceX;
 	int sy = tpag->sourceY;
 	int sw = tpag->sourceWidth;
 	int sh = tpag->sourceHeight;
-	
-	float dx = (float)(tpag->targetX - originX);
-	float dy = (float)(tpag->targetY - originY);
-	int dw = (int)(xscale * tpag->targetWidth);
-	int dh = (int)(yscale * tpag->targetHeight);
-	dx *= xscale;
-	dy *= yscale;
-	dx += x;
-	dy += y;
 
-	SWTexture* texture = swr->textures[pageId];
-	
+	float dx = (float)(tpag->targetX - originX);
+        float dy = (float)(tpag->targetY - originY);
+        int dw = (int)(xscale * tpag->targetWidth);
+        int dh = (int)(yscale * tpag->targetHeight);
+        dx *= xscale;
+        dy *= yscale;
+        dx += x;
+        dy += y;
+
+        // --- FRUSTUM CULLING INJECTION ---
+        // Calculate bounding box boundaries, accounting for inverted scales
+        float xMin = dx;
+        float xMax = dx + (float)dw;
+        if (dw < 0) { xMin = dx + (float)dw; xMax = dx; }
+
+        float yMin = dy;
+        float yMax = dy + (float)dh;
+        if (dh < 0) { yMin = dy + (float)dh; yMax = dy; }
+
+        // If the sprite falls entirely outside the 480x272 screen space, drop it!
+        // (If your active surface size differs, swap out 480 and 272 with your target variables)
+        if (xMax < 0.0f || xMin > 480.0f || yMax < 0.0f || yMin > 272.0f) {
+                return;
+        }
+        // ---------------------------------
+
+        SWTexture* texture = swr->textures[pageId];
+
 	if (UNLIKELY(swrMustRotate(angleDeg)))
 	{
 		float pivotX = (x - dx) * swrSgn(xscale);
@@ -1328,40 +1345,58 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
 }
 
 static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
-									  int32_t srcOffX, int32_t srcOffY, int32_t srcW, int32_t srcH,
-									  float x, float y, float xscale, float yscale, float angleDeg,
-									  float pivotX, float pivotY, uint32_t color, float alpha)
+                                      int32_t srcOffX, int32_t srcOffY, int32_t srcW, int32_t srcH,
+                                      float x, float y, float xscale, float yscale, float angleDeg,
+                                      float pivotX, float pivotY, uint32_t color, float alpha)
 {
-	SWRenderer* swr = (SWRenderer*) renderer;
-	DataWin* dwin = renderer->dataWin;
-	
-	if (tpagIndex < 0 || (uint32_t) tpagIndex >= dwin->tpag.count) return;
-	
-	TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
-	int16_t pageId = tpag->texturePageId;
-	if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) return;
-	if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
-	
-	int sx = tpag->sourceX + srcOffX;
-	int sy = tpag->sourceY + srcOffY;
-	int sw = srcW;
-	int sh = srcH;
-	
-	float dx = x;
-	float dy = y;
-	int dw = swrCeiling(xscale * sw);
-	int dh = swrCeiling(yscale * sh);
-	
-	SWTexture* texture = swr->textures[pageId];
-	
-	if (UNLIKELY(swrMustRotate(angleDeg)))
-	{
-		swrDrawSpriteRotated(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, pivotX * dw, pivotY * dh);
-	}
-	else
-	{
-		swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
-	}
+        SWRenderer* swr = (SWRenderer*) renderer;
+        DataWin* dwin = renderer->dataWin;
+
+        if (tpagIndex < 0 || (uint32_t) tpagIndex >= dwin->tpag.count) return;
+
+        TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
+        int16_t pageId = tpag->texturePageId;
+        if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) return;
+
+        int sx = tpag->sourceX + srcOffX;
+        int sy = tpag->sourceY + srcOffY;
+        int sw = srcW;
+        int sh = srcH;
+
+        float dx = x;
+        float dy = y;
+        int dw = swrCeiling(xscale * sw);
+        int dh = swrCeiling(yscale * sh);
+
+        // --- FRUSTUM CULLING INJECTION ---
+        // Determine boundaries for bounding box calculations
+        float xMin = dx;
+        float xMax = dx + (float)dw;
+        if (dw < 0) { xMin = dx + (float)dw; xMax = dx; }
+
+        float yMin = dy;
+        float yMax = dy + (float)dh;
+        if (dh < 0) { yMin = dy + (float)dh; yMax = dy; }
+
+        // If the sprite component falls entirely off the 480x272 screen space, reject it instantly!
+        if (xMax < 0.0f || xMin > 480.0f || yMax < 0.0f || yMin > 272.0f) {
+                return;
+        }
+        // ---------------------------------
+
+        // Defer texture loading/validation check UNTIL we know it is actually visible
+        if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
+
+        SWTexture* texture = swr->textures[pageId];
+
+        if (UNLIKELY(swrMustRotate(angleDeg)))
+        {
+                swrDrawSpriteRotated(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, pivotX * dw, pivotY * dh);
+        }
+        else
+        {
+                swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
+        }
 }
 
 static void SWRenderer_drawSpritePos(Renderer* renderer, int32_t tpagIndex,
