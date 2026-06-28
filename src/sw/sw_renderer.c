@@ -270,37 +270,77 @@ static void swrFreeTexture(SWTexture* texture)
         free(texture);
 }
 
-static uintpixel_t* swrStreamSliceFromDisk(uint32_t masterPageId, int sliceIndex, int sliceSize)
-{
-        uint32_t targetFileId = (masterPageId * 16) + sliceIndex;
+// Define the safe upper cap for concurrently loaded chunks in RAM (e.g., 48 MB)
+#define MAX_ACTIVE_SLICES 48
 
+typedef struct {
+        SWTexture* tex;
+        int sliceIdx;
+} TrackedSlice;
+
+static uintpixel_t* swrStreamSliceFromDisk(SWTexture* parentTex, int sliceIndex, int sliceSize)
+{
+        // Pull masterPageId out of the parent structure context
+        uint32_t masterPageId = parentTex->masterPageId;
+        
+        uint32_t targetFileId = (masterPageId * 16) + sliceIndex;
         char filepath[256];
         snprintf(filepath, sizeof(filepath), "/roms/butterscotch/texture_page_%u.bin", targetFileId);
 
         size_t pixel_count = (size_t)(sliceSize * sliceSize);
-
         FILE* file = fopen(filepath, "rb");
         if (!file) {
-                // Return a clean blank tile so the engine doesn't crash
                 return (uintpixel_t*)safeCalloc(pixel_count, sizeof(uintpixel_t));
         }
 
-        // Track how much memory we are actively consuming
-        static int bitcount = 0;
-        bitcount++;
-        if (bitcount % 16 == 0) {
-                fprintf(stderr, "BUTTERSCOTCH_MEM: Lazy-loaded another texture chunk block! Total calls: %d\n", bitcount);
+        // --- SELF-CONTAINED AUTOMATIC EVICTION PIPELINE ---
+        static TrackedSlice allocationTable[MAX_ACTIVE_SLICES];
+        static int totalAllocatedSlices = 0;
+        static int evictionTrackerIndex = 0;
+
+        // If we are at our RAM ceiling limit, evict a slice to clear space
+        if (totalAllocatedSlices >= MAX_ACTIVE_SLICES) {
+                int searchCount = 0;
+                while (searchCount < MAX_ACTIVE_SLICES) {
+                        TrackedSlice target = allocationTable[evictionTrackerIndex];
+
+                        // Verify that this texture container still exists and contains the live pointer
+                        if (target.tex && target.tex->slices[target.sliceIdx]) {
+                                free(target.tex->slices[target.sliceIdx]);
+                                target.tex->slices[target.sliceIdx] = NULL;
+
+                                fprintf(stderr, "BUTTERSCOTCH_LRU: Evicted Page %u [Slice %d] to clear RAM.\n",
+                                        target.tex->masterPageId, target.sliceIdx);
+                                
+                                // Advance the eviction target index pointer for the next run cycle
+                                evictionTrackerIndex = (evictionTrackerIndex + 1) % MAX_ACTIVE_SLICES;
+                                break;
+                        }
+
+                        evictionTrackerIndex = (evictionTrackerIndex + 1) % MAX_ACTIVE_SLICES;
+                        searchCount++;
+                }
         }
 
         uintpixel_t* pixels = (uintpixel_t*)safeMalloc(pixel_count * sizeof(uintpixel_t));
-
         size_t read_bytes = fread(pixels, sizeof(uintpixel_t), pixel_count, file);
         if (read_bytes != pixel_count) {
-                // Clear out unread space to prevent reading unitialized memory garbage
                 memset(pixels + read_bytes, 0, (pixel_count - read_bytes) * sizeof(uintpixel_t));
         }
-        
         fclose(file);
+
+        // --- REGISTER NEW ALLOCATION TRACKING ENTRY ---
+        if (totalAllocatedSlices < MAX_ACTIVE_SLICES) {
+                allocationTable[totalAllocatedSlices].tex = parentTex;
+                allocationTable[totalAllocatedSlices].sliceIdx = sliceIndex;
+                totalAllocatedSlices++;
+        } else {
+                // Overwrite the oldest tracking entry slot in our circular layout ring
+                int registerIndex = (evictionTrackerIndex == 0) ? (MAX_ACTIVE_SLICES - 1) : (evictionTrackerIndex - 1);
+                allocationTable[registerIndex].tex = parentTex;
+                allocationTable[registerIndex].sliceIdx = sliceIndex;
+        }
+
         return pixels;
 }
 
@@ -315,17 +355,18 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
                 return texture->buffer[y * texture->width + x];
         }
 
-        // Hard guarantee: If the texture is smaller than a single slice anyway, 
+        // Hard guarantee: If the texture is smaller than a single slice anyway,
         // it must live entirely in slice 0.
         if (texture->width <= 512 && texture->height <= 512) {
                 if (texture->slices[0] == NULL) {
-                        texture->slices[0] = swrStreamSliceFromDisk(texture->masterPageId, 0, 512);
+                        // Pass 'texture' context instead of just masterPageId
+                        texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 512);
                 }
                 return texture->slices[0][(y * 512) + x];
         }
 
         // Ultra-fast bitwise math for large master sheets (512 is 2^9)
-        int sliceX = x >> 9; 
+        int sliceX = x >> 9;
         int sliceY = y >> 9;
         int slicesWide = texture->width >> 9;
         if (slicesWide == 0) slicesWide = 1;
@@ -336,7 +377,8 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         if (sliceIndex < 0 || sliceIndex >= 16) return 0;
 
         if (texture->slices[sliceIndex] == NULL) {
-                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture->masterPageId, sliceIndex, 512);
+                // Pass 'texture' context instead of just masterPageId
+                texture->slices[sliceIndex] = swrStreamSliceFromDisk(texture, sliceIndex, 512);
         }
 
         int localX = x & 511;
