@@ -906,7 +906,7 @@ int main(int argc, char* argv[]) {
         options.parseExtn = true;
         options.parseSond = true;
         options.parseAgrp = true;
-        options.parseSprt = false;
+        options.parseSprt = true;
         options.parseBgnd = true;
         options.parsePath = true;
         options.parseScpt = true;
@@ -916,7 +916,7 @@ int main(int argc, char* argv[]) {
         options.parseTmln = true;
         options.parseObjt = true;
         options.parseRoom = true;
-        options.parseTpag = false;
+        options.parseTpag = true;
         options.parseCode = true;
         options.parseVari = true;
         options.parseFunc = true;
