@@ -918,8 +918,8 @@ int main(int argc, char* argv[]) {
         options.parseRoom = true;
         options.parseTpag = false;
         options.parseCode = true;
-        options.parseVari = false;
-        options.parseFunc = false;
+        options.parseVari = true;
+        options.parseFunc = true;
         options.parseStrg = true;
         options.parseTxtr = false;
         options.parseAudo = true;
