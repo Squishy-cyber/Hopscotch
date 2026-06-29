@@ -424,7 +424,7 @@ static void parseCommandLineArgs(CommandLineArgs* args, int argc, char* argv[]) 
     args->fastForwardSpeed = 0.0;
     args->osType = OS_WINDOWS;
     args->profilerFramesBetween = 0;
-    args->loadType = DATAWINLOADTYPE_LOAD_IN_MEMORY_AHEAD_OF_TIME;
+    args->loadType = DATAWINLOADTYPE_LOAD_PER_CHUNK;
     // TODO: detect available driver features
     // at runtime to improve defaults.
 #if defined(ENABLE_MODERN_GL) && (defined(USE_GLFW3) || defined(USE_SDL2) || defined(USE_SDL3))
