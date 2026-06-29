@@ -986,80 +986,79 @@ static void swrDrawLine(Renderer* renderer, float x1, float y1, float x2, float 
 }
 
 static void swrDrawSpriteInternal(
-	Renderer* renderer, int dx, int dy, int dw, int dh,
-	SWTexture* texture, int sx, int sy, int sw, int sh,
-	uintpixel_t tintColor, int alpha
+        Renderer* renderer, int dx, int dy, int dw, int dh,
+        SWTexture* texture, int sx, int sy, int sw, int sh,
+        uintpixel_t tintColor, int alpha
 )
 {
-	SWRenderer *swr = (SWRenderer*) renderer;
+        SWRenderer *swr = (SWRenderer*) renderer;
 
-	// Add this right here to capture incoming geometry values:
+        // Keep your telemetry logs intact
         fprintf(stderr, "SWR_GEO: PageId %u | Src: %d,%d (%dx%d) -> Dst: %d,%d (%dx%d)\n",
                 texture->masterPageId, sx, sy, sw, sh, dx, dy, dw, dh);
-	
-	bool flipX = false, flipY = false;
-	if (dw < 0) { dx += dw; dw = -dw; flipX = true; }
-	if (dh < 0) { dy += dh; dh = -dh; flipY = true; }
-	
-	//basic out of bound checks
-	if (dw == 0 || dh == 0) return;
-	if (sw == 0) sw = 1;
-	if (sh == 0) sh = 1;
-	if (dx + dw <= swr->portX) return;
-	if (dy + dh <= swr->portY) return;
-	if (dx >= swr->maxX) return;
-	if (dy >= swr->maxY) return;
-	
-	int odw = dw, odh = dh;
-	int osw = sw, osh = sh;
-	
-	int minx = swr->portX, miny = swr->portY, maxx = swr->portX + swr->portW, maxy = swr->portY + swr->portH;
-	
-	//out of bounds adjustment checks
-	int diffxl = 0, diffyl = 0, diffxu = 0, diffyu = 0;
-	if (dx < minx) { diffxl = minx - dx; dx = minx; dw -= diffxl; }
-	if (dy < miny) { diffyl = miny - dy; dy = miny; dh -= diffyl; }
-	if (dx + dw > maxx) { diffxu = dx + dw - maxx; dw -= diffxu; }
-	if (dy + dh > maxy) { diffyu = dy + dh - maxy; dh -= diffyu; }
-	
-	if (diffxl != 0 || diffyl != 0 || diffxu != 0 || diffyu != 0)
-	{
-		//adjust source coordinates too
-		diffxl = (int)((long)diffxl * osw / odw);
-		diffyl = (int)((long)diffyl * osh / odh);
-		diffxu = (int)((long)(diffxu + 1) * osw / odw);
-		diffyu = (int)((long)(diffyu + 1) * osh / odh);
-		sx += flipX ? diffxu : diffxl;
-		sy += flipY ? diffyu : diffyl;
-		sw -= diffxl + diffxu;
-		sh -= diffyl + diffyu;
-		if (sw <= 0 || sh <= 0) return;
-	}
-	
-	//clip the source coords into bounds too
-	if (sx < 0) { sw += sx; sx = 0; }
-	if (sy < 0) { sh += sy; sy = 0; }
-	if (sx + sw >= texture->width)  { sw = texture->width  - sx; }
-	if (sy + sh >= texture->height) { sh = texture->height - sy; }
-	
-	//okay, now we can finally get on with rendering
-	
-	int ixs = 0, oxs = 1, iys = 0, oys = 1;
-	if (flipX) ixs = dw - 1, oxs = -1;
-	if (flipY) iys = dh - 1, oys = -1;
-	
-	// tweak these if stuff doesn't look right
-	typedef int32_t fixedp_t;
-	const int fp_prec = 14;
 
-	// Force step calculation using native asset sizes to bypass transform interference
-	fixedp_t ystep = ((fixedp_t) sh << fp_prec) / dh;
+        bool flipX = false, flipY = false;
+        if (dw < 0) { dx += dw; dw = -dw; flipX = true; }
+        if (dh < 0) { dy += dh; dh = -dh; flipY = true; }
+
+        // Basic out of bound checks
+        if (dw == 0 || dh == 0) return;
+        if (sw == 0) sw = 1;
+        if (sh == 0) sh = 1;
+        if (dx + dw <= swr->portX) return;
+        if (dy + dh <= swr->portY) return;
+        if (dx >= swr->maxX) return;
+        if (dy >= swr->maxY) return;
+
+        int odw = dw, odh = dh;
+        int osw = sw, osh = sh;
+
+        int minx = swr->portX, miny = swr->portY, maxx = swr->portX + swr->portW, maxy = swr->portY + swr->portH;
+
+        // Out of bounds adjustment checks
+        int diffxl = 0, diffyl = 0, diffxu = 0, diffyu = 0;
+        if (dx < minx) { diffxl = minx - dx; dx = minx; dw -= diffxl; }
+        if (dy < miny) { diffyl = miny - dy; dy = miny; dh -= diffyl; }
+        if (dx + dw > maxx) { diffxu = dx + dw - maxx; dw -= diffxu; }
+        if (dy + dh > maxy) { diffyu = dy + dh - maxy; dh -= diffyu; }
+
+        if (diffxl != 0 || diffyl != 0 || diffxu != 0 || diffyu != 0)
+        {
+                // Adjust source coordinates too
+                diffxl = (int)((long)diffxl * osw / odw);
+                diffyl = (int)((long)diffyl * osh / odh);
+                diffxu = (int)((long)(diffxu + 1) * osw / odw);
+                diffyu = (int)((long)(diffyu + 1) * osh / odh);
+                sx += flipX ? diffxu : diffxl;
+                sy += flipY ? diffyu : diffyl;
+                sw -= diffxl + diffxu;
+                sh -= diffyl + diffyu;
+                if (sw <= 0 || sh <= 0) return;
+        }
+
+        // Clip the source coords into bounds too
+        if (sx < 0) { sw += sx; sx = 0; }
+        if (sy < 0) { sh += sy; sy = 0; }
+        if (sx + sw >= texture->width)  { sw = texture->width  - sx; }
+        if (sy + sh >= texture->height) { sh = texture->height - sy; }
+
+        // Okay, now we can finally get on with rendering
+        int ixs = 0, oxs = 1, iys = 0, oys = 1;
+        if (flipX) ixs = dw - 1, oxs = -1;
+        if (flipY) iys = dh - 1, oys = -1;
+
+        typedef int32_t fixedp_t;
+        const int fp_prec = 14;
+
+        // Force step calculation using native asset sizes to bypass transform interference
+        fixedp_t ystep = ((fixedp_t) sh << fp_prec) / dh;
         fixedp_t xstep = ((fixedp_t) sw << fp_prec) / dw;
-	fixedp_t oxs2 = oxs * xstep;
-	fixedp_t oys2 = oys * ystep;
-	fixedp_t ixs2 = ixs * xstep;
-	fixedp_t iys2 = iys * ystep;
-	if (xstep == (1 << fp_prec) && ystep == (1 << fp_prec))
+        fixedp_t oxs2 = oxs * xstep;
+        fixedp_t oys2 = oys * ystep;
+        fixedp_t ixs2 = ixs * xstep;
+        fixedp_t iys2 = iys * ystep;
+
+        if (xstep == (1 << fp_prec) && ystep == (1 << fp_prec))
         {
                 fixedp_t ys2 = (fixedp_t) iys2;
                 for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
@@ -1067,11 +1066,45 @@ static void swrDrawSpriteInternal(
                         uintpixel_t* dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
                         int ty = sy + (dh == sh ? ys : (int)(ys2 >> fp_prec));
 
+                        int sliceY = ty >> 8;
+                        int slicesWide = texture->width >> 8;
+                        if (slicesWide == 0) slicesWide = 1;
+                        int localY = ty & 255;
+                        int rowOffset = localY << 8;
+
                         for (int x = 0, xs = ixs; x < dw; x++, xs += oxs)
                         {
                                 int tx = sx + xs;
-                                uintpixel_t pixel = swrGetVirtualTexel(texture, tx, ty);
-                                
+                                uintpixel_t pixel;
+
+                                if (texture->buffer == NULL && texture->width <= 256 && texture->height <= 256) {
+                                        if (__builtin_expect(!texture->slices[0], 0)) {
+                                                texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 256);
+                                        }
+                                        uint16_t p16 = texture->slices[0][rowOffset + tx];
+                                        if (p16 == 0) continue;
+                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
+                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
+                                        uint32_t b = (p16         & 0x1F) << 3;
+                                        pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
+                                }
+                                else if (texture->buffer == NULL) {
+                                        int sliceX = tx >> 8;
+                                        int sliceIdx = (sliceY * slicesWide) + sliceX;
+                                        if (__builtin_expect(!texture->slices[sliceIdx], 0)) {
+                                                texture->slices[sliceIdx] = swrStreamSliceFromDisk(texture, sliceIdx, 256);
+                                        }
+                                        uint16_t p16 = texture->slices[sliceIdx][rowOffset + (tx & 255)];
+                                        if (p16 == 0) continue;
+                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
+                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
+                                        uint32_t b = (p16         & 0x1F) << 3;
+                                        pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
+                                }
+                                else {
+                                        pixel = texture->buffer[ty * texture->width + tx];
+                                }
+
                                 if (opaque(pixel))
                                         alphaBlend(&dstline[x], tint(tintColor, pixel), alpha);
                         }
@@ -1085,12 +1118,46 @@ static void swrDrawSpriteInternal(
                         uintpixel_t* dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
                         int ty = sy + (dh == sh ? ys : (int)(ys2 >> fp_prec));
 
+                        int sliceY = ty >> 8;
+                        int slicesWide = texture->width >> 8;
+                        if (slicesWide == 0) slicesWide = 1;
+                        int localY = ty & 255;
+                        int rowOffset = localY << 8;
+
                         fixedp_t xs2 = ixs2;
                         for (int x = 0, xs = ixs; x < dw; x++, xs += oxs, xs2 += oxs2)
                         {
                                 int tx = sx + (int)(xs2 >> fp_prec);
-                                uintpixel_t pixel = swrGetVirtualTexel(texture, tx, ty);
-                                
+                                uintpixel_t pixel;
+
+                                if (texture->buffer == NULL && texture->width <= 256 && texture->height <= 256) {
+                                        if (__builtin_expect(!texture->slices[0], 0)) {
+                                                texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 256);
+                                        }
+                                        uint16_t p16 = texture->slices[0][rowOffset + tx];
+                                        if (p16 == 0) continue;
+                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
+                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
+                                        uint32_t b = (p16         & 0x1F) << 3;
+                                        pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
+                                }
+                                else if (texture->buffer == NULL) {
+                                        int sliceX = tx >> 8;
+                                        int sliceIdx = (sliceY * slicesWide) + sliceX;
+                                        if (__builtin_expect(!texture->slices[sliceIdx], 0)) {
+                                                texture->slices[sliceIdx] = swrStreamSliceFromDisk(texture, sliceIdx, 256);
+                                        }
+                                        uint16_t p16 = texture->slices[sliceIdx][rowOffset + (tx & 255)];
+                                        if (p16 == 0) continue;
+                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
+                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
+                                        uint32_t b = (p16         & 0x1F) << 3;
+                                        pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
+                                }
+                                else {
+                                        pixel = texture->buffer[ty * texture->width + tx];
+                                }
+
                                 if (opaque(pixel))
                                         alphaBlend(&dstline[x], tint(tintColor, pixel), alpha);
                         }
@@ -1307,23 +1374,6 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
         dx += x;
         dy += y;
 
-        // --- FRUSTUM CULLING INJECTION ---
-        // Calculate bounding box boundaries, accounting for inverted scales
-        float xMin = dx;
-        float xMax = dx + (float)dw;
-        if (dw < 0) { xMin = dx + (float)dw; xMax = dx; }
-
-        float yMin = dy;
-        float yMax = dy + (float)dh;
-        if (dh < 0) { yMin = dy + (float)dh; yMax = dy; }
-
-        // If the sprite falls entirely outside the 480x272 screen space, drop it!
-        // (If your active surface size differs, swap out 480 and 272 with your target variables)
-        if (xMax < 0.0f || xMin > 480.0f || yMax < 0.0f || yMin > 272.0f) {
-                return;
-        }
-        // ---------------------------------
-
         SWTexture* texture = swr->textures[pageId];
 
 	if (UNLIKELY(swrMustRotate(angleDeg)))
@@ -1367,22 +1417,6 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
         float dy = y;
         int dw = swrCeiling(xscale * sw);
         int dh = swrCeiling(yscale * sh);
-
-        // --- FRUSTUM CULLING INJECTION ---
-        // Determine boundaries for bounding box calculations
-        float xMin = dx;
-        float xMax = dx + (float)dw;
-        if (dw < 0) { xMin = dx + (float)dw; xMax = dx; }
-
-        float yMin = dy;
-        float yMax = dy + (float)dh;
-        if (dh < 0) { yMin = dy + (float)dh; yMax = dy; }
-
-        // If the sprite component falls entirely off the 480x272 screen space, reject it instantly!
-        if (xMax < 0.0f || xMin > 480.0f || yMax < 0.0f || yMin > 272.0f) {
-                return;
-        }
-        // ---------------------------------
 
         // Defer texture loading/validation check UNTIL we know it is actually visible
         if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
