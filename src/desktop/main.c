@@ -924,8 +924,8 @@ int main(int argc, char* argv[]) {
         options.parseTxtr = true;
         options.parseAudo = true;
         options.skipLoadingPreciseMasksForNonPreciseSprites = true;
-        options.loadType = args.loadType;
-        options.lazyLoadRooms = args.lazyRooms;
+        options.loadType = DATAWINLOADTYPE_LOAD_PER_CHUNK;
+        options.lazyLoadRooms = true;
         options.eagerlyLoadedRooms = args.eagerRooms;
         DataWin* dataWin = DataWin_parse(currentDataWinPath, options);
 
