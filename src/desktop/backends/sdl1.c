@@ -71,6 +71,9 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
         return false;
     }
 
+    // Hide the cursor immediately after initialization
+    SDL_ShowCursor(SDL_DISABLE);
+
     fbWidth = reqW;
     fbHeight = reqH;
     if(!headless) {

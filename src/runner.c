@@ -650,6 +650,13 @@ void Runner_drawTileLayer(Runner* runner, RoomLayerTilesData* data, float layerO
 
     static bool rotateWarned = false;
 
+    // --- CRITICAL CULLING OPTIMIZATION ---
+    GMLCamera* cam = Runner_getCameraForView(runner, 0); // View 0 is the default overworld viewport
+    float camX = cam ? (float)cam->viewX : 0.0f;
+    float camY = cam ? (float)cam->viewY : 0.0f;
+    float camW = cam ? (float)cam->viewWidth : 320.0f; // Default fallback to screen width
+    float camH = cam ? (float)cam->viewHeight : 240.0f; // Default fallback to screen height
+
     repeat(data->tilesY, ty) {
         repeat(data->tilesX, tx) {
             uint32_t cell = data->tileData[ty * data->tilesX + tx];
@@ -673,10 +680,15 @@ void Runner_drawTileLayer(Runner* runner, RoomLayerTilesData* data, float layerO
             float xscale = mirror ? -1.0f : 1.0f;
             float yscale = flip ? -1.0f : 1.0f;
 
-            // With negative scale the quad grows in the opposite direction, so shift the
-            // destination by one tile to keep the origin at the top-left of the cell.
             float dstX = (float) (tx * tileW) + layerOffsetX + (mirror ? (float) tileW : 0.0f);
             float dstY = (float) (ty * tileH) + layerOffsetY + (flip ? (float) tileH : 0.0f);
+
+            // --- FRUSTUM CULL CHECK ---
+            // If the tile bounds are completely outside our active 320x240 view viewport, skip drawing entirely!
+            if ((dstX + (float)tileW) < camX || dstX > (camX + camW) || 
+                (dstY + (float)tileH) < camY || dstY > (camY + camH)) {
+                continue;
+            }
 
             runner->renderer->vtable->drawSpritePart(runner->renderer, tpagIndex, srcX, srcY, (int32_t) tileW, (int32_t) tileH, dstX, dstY, xscale, yscale, 0.0f, 0.0f, 0.0f, 0xFFFFFF, 1.0f);
         }
