@@ -231,20 +231,27 @@ bool platformHandleEvents(void) {
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                int32_t gmlKey = SDLKeyToGml(e.key.keysym.sym);
-                RunnerKeyboard_onKeyDown(g_runner->keyboard, gmlKey);
+                // --- DIRECT SOURCE REMAP ---
+                int rawKeySym = e.key.keysym.sym;
+                if (rawKeySym == SDLK_SPACE)      e.key.keysym.sym = SDLK_z; // A button sends Z
+                else if (rawKeySym == SDLK_LCTRL) e.key.keysym.sym = SDLK_x; // B button sends X
+                else if (rawKeySym == SDLK_z)     e.key.keysym.sym = SDLK_c; // Home button sends C
 
-                // If it's a hardware button, override character injection to prevent conflicts
-                if (e.key.keysym.sym == SDLK_z) {
-                    RunnerKeyboard_onCharacter(g_runner->keyboard, 'c');
-                } else if (e.key.keysym.sym == SDLK_SPACE) {
-                    RunnerKeyboard_onCharacter(g_runner->keyboard, 'z');
-                } else if (e.key.keysym.sym == SDLK_LCTRL) {
-                    RunnerKeyboard_onCharacter(g_runner->keyboard, 'x');
-                } else if (e.key.keysym.unicode != 0) {
-                    // Standard keyboard path
+                RunnerKeyboard_onKeyDown(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
+                if (e.key.keysym.unicode != 0)
                     RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
-                }
+                break;
+
+            case SDL_KEYUP:
+                // During playback, suppress real keyboard input
+                if (InputRecording_isPlaybackActive(globalInputRecording)) break;
+
+                // --- DIRECT SOURCE REMAP ---
+                if (e.key.keysym.sym == SDLK_SPACE)      e.key.keysym.sym = SDLK_z;
+                else if (e.key.keysym.sym == SDLK_LCTRL) e.key.keysym.sym = SDLK_x;
+                else if (e.key.keysym.sym == SDLK_z)     e.key.keysym.sym = SDLK_c;
+
+                RunnerKeyboard_onKeyUp(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
