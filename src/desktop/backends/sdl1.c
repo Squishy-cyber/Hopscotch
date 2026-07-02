@@ -166,16 +166,15 @@ void *platformGetProcAddress(const char *name) {
 #endif
 
 static int32_t SDLKeyToGml(int sdlkey) {
-    // --- LEAPSTER GS HARDWARE BUTTON REMAP LOOP ---
-    switch (sdlkey) {
-        case SDLK_SPACE:  return 'Z'; // Map Physical A Button to Engine Z
-        case SDLK_LCTRL:  return 'X'; // Map Physical B Button to Engine X
-        case SDLK_z:      return 'C'; // Map Physical Home Button to Engine C
-    }
+    // --- LEAPSTER GS HARDWARE BUTTON REMAP ---
+    if (sdlkey == SDLK_SPACE) return 'Z'; // Physical A -> Engine Z
+    if (sdlkey == SDLK_LCTRL) return 'X'; // Physical B -> Engine X
+    if (sdlkey == SDLK_z)     return 'C'; // Physical Home -> Engine C
 
     // Letters and numbers are the same as GML
     if (sdlkey >= 'a' && sdlkey <= 'z') return toupper(sdlkey);
     if (sdlkey >= '0' && sdlkey <= '9') return sdlkey;
+    
     // Special keys need mapping
     switch (sdlkey) {
         case SDLK_ESCAPE:    return VK_ESCAPE;
@@ -228,17 +227,24 @@ bool platformHandleEvents(void) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch(e.type) {
-            case SDL_KEYDOWN:
+	    case SDL_KEYDOWN:
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
-                RunnerKeyboard_onKeyDown(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
-                if (e.key.keysym.unicode != 0)
+
+                int32_t gmlKey = SDLKeyToGml(e.key.keysym.sym);
+                RunnerKeyboard_onKeyDown(g_runner->keyboard, gmlKey);
+
+                // If it's a hardware button, override character injection to prevent conflicts
+                if (e.key.keysym.sym == SDLK_z) {
+                    RunnerKeyboard_onCharacter(g_runner->keyboard, 'c');
+                } else if (e.key.keysym.sym == SDLK_SPACE) {
+                    RunnerKeyboard_onCharacter(g_runner->keyboard, 'z');
+                } else if (e.key.keysym.sym == SDLK_LCTRL) {
+                    RunnerKeyboard_onCharacter(g_runner->keyboard, 'x');
+                } else if (e.key.keysym.unicode != 0) {
+                    // Standard keyboard path
                     RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
-                break;
-            case SDL_KEYUP:
-                // During playback, suppress real keyboard input
-                if (InputRecording_isPlaybackActive(globalInputRecording)) break;
-                RunnerKeyboard_onKeyUp(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
+                }
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
