@@ -233,27 +233,19 @@ bool platformHandleEvents(void) {
 
                 {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
-                    char forceChar = 0;
 
-                    // Absolute Hardware Mapping Override
-                    if (e.key.keysym.sym == SDLK_SPACE) { // Physical A Button
-                        finalGmlKey = 'Z';
-                        forceChar = 'z';
-                    } else if (e.key.keysym.sym == SDLK_LCTRL) { // Physical B Button
-                        finalGmlKey = 'X';
-                        forceChar = 'x';
-                    } else if (e.key.keysym.sym == SDLK_z) { // Physical Home Button
-                        finalGmlKey = 'C';
-                        forceChar = 'c';
+                    // Map the physical buttons straight to Undertale's expected engine keys
+                    if (e.key.keysym.sym == SDLK_SPACE) {       // Physical A
+                        finalGmlKey = VK_SPACE;                 // Force GameMaker Space (Confirm)
+                    } else if (e.key.keysym.sym == SDLK_LCTRL) { // Physical B
+                        finalGmlKey = VK_SHIFT;                 // Force GameMaker Shift (Cancel)
+                    } else if (e.key.keysym.sym == SDLK_z) {     // Physical Home
+                        finalGmlKey = VK_CONTROL;               // Force GameMaker Control (Menu)
                     }
 
                     RunnerKeyboard_onKeyDown(g_runner->keyboard, finalGmlKey);
-
-                    if (forceChar != 0) {
-                        RunnerKeyboard_onCharacter(g_runner->keyboard, forceChar);
-                    } else if (e.key.keysym.unicode != 0) {
+                    if (e.key.keysym.unicode != 0)
                         RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
-                    }
                 }
                 break;
 
@@ -264,9 +256,9 @@ bool platformHandleEvents(void) {
                 {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
 
-                    if (e.key.keysym.sym == SDLK_SPACE)      finalGmlKey = 'Z';
-                    else if (e.key.keysym.sym == SDLK_LCTRL) finalGmlKey = 'X';
-                    else if (e.key.keysym.sym == SDLK_z)     finalGmlKey = 'C';
+                    if (e.key.keysym.sym == SDLK_SPACE)      finalGmlKey = VK_SPACE;
+                    else if (e.key.keysym.sym == SDLK_LCTRL) finalGmlKey = VK_SHIFT;
+                    else if (e.key.keysym.sym == SDLK_z)     finalGmlKey = VK_CONTROL;
 
                     RunnerKeyboard_onKeyUp(g_runner->keyboard, finalGmlKey);
                 }
