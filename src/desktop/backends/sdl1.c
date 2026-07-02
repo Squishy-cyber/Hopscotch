@@ -166,11 +166,6 @@ void *platformGetProcAddress(const char *name) {
 #endif
 
 static int32_t SDLKeyToGml(int sdlkey) {
-    // --- LEAPSTER GS HARDWARE BUTTON REMAP ---
-    if (sdlkey == SDLK_SPACE) return VK_SPACE;   // Physical A -> GameMaker Confirm (Space)
-    if (sdlkey == SDLK_LCTRL) return VK_SHIFT;   // Physical B -> GameMaker Cancel/Run (Shift)
-    if (sdlkey == SDLK_z)     return VK_CONTROL; // Physical Home -> GameMaker Menu (Control)
-
     // Letters and numbers are the same as GML
     if (sdlkey >= 'a' && sdlkey <= 'z') return toupper(sdlkey);
     if (sdlkey >= '0' && sdlkey <= '9') return sdlkey;
@@ -228,24 +223,43 @@ bool platformHandleEvents(void) {
     while (SDL_PollEvent(&e)) {
         switch(e.type) {
 	    case SDL_KEYDOWN:
-                // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
                 {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
+                    unsigned int forceChar = 0;
+
+                    // Intercept physical buttons and force both the GML code and the character string
+                    if (e.key.keysym.sym == SDLK_SPACE) {        // Physical A
+                        finalGmlKey = 'Z';                       // Force Engine Z key
+                        forceChar = 'z';                         // Force Character 'z'
+                    } else if (e.key.keysym.sym == SDLK_LCTRL) {  // Physical B
+                        finalGmlKey = 'X';                       // Force Engine X key
+                        forceChar = 'x';                         // Force Character 'x'
+                    } else if (e.key.keysym.sym == SDLK_z) {      // Physical Home
+                        finalGmlKey = 'C';                       // Force Engine C key
+                        forceChar = 'c';                         // Force Character 'c'
+                    }
 
                     RunnerKeyboard_onKeyDown(g_runner->keyboard, finalGmlKey);
-                    if (e.key.keysym.unicode != 0)
+
+                    if (forceChar != 0) {
+                        RunnerKeyboard_onCharacter(g_runner->keyboard, forceChar);
+                    } else if (e.key.keysym.unicode != 0) {
                         RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
+                    }
                 }
                 break;
 
             case SDL_KEYUP:
-                // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
                 {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
+
+                    if (e.key.keysym.sym == SDLK_SPACE)      finalGmlKey = 'Z';
+                    else if (e.key.keysym.sym == SDLK_LCTRL) finalGmlKey = 'X';
+                    else if (e.key.keysym.sym == SDLK_z)     finalGmlKey = 'C';
 
                     RunnerKeyboard_onKeyUp(g_runner->keyboard, finalGmlKey);
                 }
