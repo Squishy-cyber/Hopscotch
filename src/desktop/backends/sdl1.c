@@ -229,15 +229,15 @@ bool platformHandleEvents(void) {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
                     unsigned int forceChar = 0;
 
-                    // Intercept the true Leapster GS hardware keysym values
+                    // Re-shuffled to correct the cross-wiring
                     if (e.key.keysym.sym == 98 || e.key.keysym.sym == 'b') {         // Physical A button
-                        finalGmlKey = 'Z';
+                        finalGmlKey = 'Z'; // Force Action (Z)
                         forceChar = 'z';
                     } else if (e.key.keysym.sym == 97 || e.key.keysym.sym == 'a') {  // Physical B button
-                        finalGmlKey = 'X';
+                        finalGmlKey = 'X'; // Force Back (X)
                         forceChar = 'x';
                     } else if (e.key.keysym.sym == 104 || e.key.keysym.sym == 'h') { // Physical Home button
-                        finalGmlKey = 'C';
+                        finalGmlKey = 'C'; // Force Menu (C)
                         forceChar = 'c';
                     }
 
