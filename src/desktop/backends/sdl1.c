@@ -166,6 +166,13 @@ void *platformGetProcAddress(const char *name) {
 #endif
 
 static int32_t SDLKeyToGml(int sdlkey) {
+    // --- LEAPSTER GS HARDWARE BUTTON REMAP LOOP ---
+    switch (sdlkey) {
+        case SDLK_SPACE:  return 'Z'; // Map Physical A Button to Engine Z
+        case SDLK_LCTRL:  return 'X'; // Map Physical B Button to Engine X
+        case SDLK_z:      return 'C'; // Map Physical Home Button to Engine C
+    }
+
     // Letters and numbers are the same as GML
     if (sdlkey >= 'a' && sdlkey <= 'z') return toupper(sdlkey);
     if (sdlkey >= '0' && sdlkey <= '9') return sdlkey;
