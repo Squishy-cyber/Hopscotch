@@ -650,18 +650,35 @@ void Runner_drawTileLayer(Runner* runner, RoomLayerTilesData* data, float layerO
 
     static bool rotateWarned = false;
 
-    // --- CRITICAL CULLING OPTIMIZATION ---
-    GMLCamera* cam = Runner_getCameraForView(runner, 0); // View 0 is the default overworld viewport
-    float camX = cam ? (float)cam->viewX : 0.0f;
-    float camY = cam ? (float)cam->viewY : 0.0f;
-    float camW = cam ? (float)cam->viewWidth : 320.0f; // Default fallback to screen width
-    float camH = cam ? (float)cam->viewHeight : 240.0f; // Default fallback to screen height
+    // --- SAFE CAMERA CHECKS ---
+    GMLCamera* cam = Runner_getCameraForView(runner, 0);
+    bool useCulling = (cam != nullptr && cam->allocated);
+
+    float camLeft = 0.0f, camRight = 0.0f, camTop = 0.0f, camBottom = 0.0f;
+    if (useCulling) {
+        float pad = 64.0f; // 64px padding margin prevents edge pop-in
+        camLeft = (float)cam->viewX - pad;
+        camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
+        camTop = (float)cam->viewY - pad;
+        camBottom = (float)cam->viewY + (float)cam->viewHeight + pad;
+    }
 
     repeat(data->tilesY, ty) {
         repeat(data->tilesX, tx) {
             uint32_t cell = data->tileData[ty * data->tilesX + tx];
             uint32_t tileIndex = cell & GMS2_TILE_INDEX_MASK;
             if (tileIndex == 0) continue; // 0 = empty
+
+            float dstX = (float) (tx * tileW) + layerOffsetX;
+            float dstY = (float) (ty * tileH) + layerOffsetY;
+
+            // --- PURE MATH FRUSTUM CULL ---
+            if (useCulling) {
+                if ((dstX + (float)tileW) < camLeft || dstX > camRight ||
+                    (dstY + (float)tileH) < camTop || dstY > camBottom) {
+                    continue; // Skip rendering offscreen tiles safely!
+                }
+            }
 
             uint32_t col = tileIndex % columns;
             uint32_t row = tileIndex / columns;
@@ -680,15 +697,8 @@ void Runner_drawTileLayer(Runner* runner, RoomLayerTilesData* data, float layerO
             float xscale = mirror ? -1.0f : 1.0f;
             float yscale = flip ? -1.0f : 1.0f;
 
-            float dstX = (float) (tx * tileW) + layerOffsetX + (mirror ? (float) tileW : 0.0f);
-            float dstY = (float) (ty * tileH) + layerOffsetY + (flip ? (float) tileH : 0.0f);
-
-            // --- FRUSTUM CULL CHECK ---
-            // If the tile bounds are completely outside our active 320x240 view viewport, skip drawing entirely!
-            if ((dstX + (float)tileW) < camX || dstX > (camX + camW) || 
-                (dstY + (float)tileH) < camY || dstY > (camY + camH)) {
-                continue;
-            }
+            if (mirror) dstX += (float) tileW;
+            if (flip) dstY += (float) tileH;
 
             runner->renderer->vtable->drawSpritePart(runner->renderer, tpagIndex, srcX, srcY, (int32_t) tileW, (int32_t) tileH, dstX, dstY, xscale, yscale, 0.0f, 0.0f, 0.0f, 0xFFFFFF, 1.0f);
         }
