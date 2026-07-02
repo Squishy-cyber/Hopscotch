@@ -215,24 +215,6 @@ static inline void Renderer_drawSpriteExt(Renderer* renderer, int32_t spriteInde
 
     Sprite* sprite = &dw->sprt.sprites[spriteIndex];
 
-    // --- GAMEPLAY SAFE VISUAL FRUSTUM CULLING ---
-    // Safely skip rendering sprites that are completely off the 320x240 screen view window
-    if (renderer->runner != nullptr) {
-        GMLCamera* cam = Runner_getCameraForView(renderer->runner, 0);
-        if (cam != nullptr && cam->allocated) {
-            float pad = 64.0f; // Padding helps avoid artifacts when large sprites cross screen edges
-            float camLeft = (float)cam->viewX - pad;
-            float camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
-            float camTop = (float)cam->viewY - pad;
-            float camBottom = (float)cam->viewY + (float)cam->viewHeight + pad;
-
-            // Simple primitive bounding check
-            if (x < camLeft || x > camRight || y < camTop || y > camBottom) {
-                return; // Safely discard the draw submission!
-            }
-        }
-    }
-
     // Nine-slice activates only when the draw scales the sprite away from its native size. At scale 1 there is nothing to slice.
     if (sprite->nineSliceEnabled && (xscale != 1.0f || yscale != 1.0f)) {
         bool flipX = 0.0f > xscale;

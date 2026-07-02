@@ -1338,34 +1338,34 @@ static void swrDrawSpriteRotated(
 }
 
 static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x, float y,
-								  float originX, float originY, float xscale, float yscale,
-								  float angleDeg, uint32_t color, float alpha)
+                                  float originX, float originY, float xscale, float yscale,
+                                  float angleDeg, uint32_t color, float alpha)
 {
-	SWRenderer* swr = (SWRenderer*) renderer;
-	DataWin* dwin = renderer->dataWin;
+        SWRenderer* swr = (SWRenderer*) renderer;
+        DataWin* dwin = renderer->dataWin;
 
-	if (tpagIndex < 0 || (uint32_t) tpagIndex >= dwin->tpag.count) {
-		fprintf(stderr, "%s: tpagIndex of %d is invalid\n", __func__, tpagIndex);
-		return;
-	}
+        if (tpagIndex < 0 || (uint32_t) tpagIndex >= dwin->tpag.count) {
+                fprintf(stderr, "%s: tpagIndex of %d is invalid\n", __func__, tpagIndex);
+                return;
+        }
 
-	TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
-	int16_t pageId = tpag->texturePageId;
-	if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) {
-		fprintf(stderr, "%s: tpagIndex of %d is invalid, as pageId of %d is invalid\n", __func__, tpagIndex, pageId);
-		return;
-	}
-	if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) {
-		fprintf(stderr, "%s: could not ensure texture is loaded, tpagIndex: %d, pageId: %d\n", __func__, tpagIndex, pageId);
-		return;
-	}
+        TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
+        int16_t pageId = tpag->texturePageId;
+        if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) {
+                fprintf(stderr, "%s: tpagIndex of %d is invalid, as pageId of %d is invalid\n", __func__, tpagIndex, pageId);
+                return;
+        }
+        if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) {
+                fprintf(stderr, "%s: could not ensure texture is loaded, tpagIndex: %d, pageId: %d\n", __func__, tpagIndex, pageId);
+                return;
+        }
 
-	int sx = tpag->sourceX;
-	int sy = tpag->sourceY;
-	int sw = tpag->sourceWidth;
-	int sh = tpag->sourceHeight;
+        int sx = tpag->sourceX;
+        int sy = tpag->sourceY;
+        int sw = tpag->sourceWidth;
+        int sh = tpag->sourceHeight;
 
-	float dx = (float)(tpag->targetX - originX);
+        float dx = (float)(tpag->targetX - originX);
         float dy = (float)(tpag->targetY - originY);
         int dw = (int)(xscale * tpag->targetWidth);
         int dh = (int)(yscale * tpag->targetHeight);
@@ -1374,24 +1374,44 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
         dx += x;
         dy += y;
 
+        // --- SAFE DRAW-STAGE FRUSTUM CULL ---
+        if (renderer->runner != nullptr) {
+                GMLCamera* cam = Runner_getCameraForView(renderer->runner, 0);
+                if (cam != nullptr && cam->allocated) {
+                        float pad = 64.0f; // Padding eliminates bounding clipping pops
+                        float camLeft = (float)cam->viewX - pad;
+                        float camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
+                        float camTop = (float)cam->viewY - pad;
+                        float camBottom = (float)cam->viewY + (float)cam->viewHeight + pad;
+
+                        // Calculate absolute width/height bounds for culling check
+                        float spriteRight = dx + (float)dw;
+                        float spriteBottom = dy + (float)dh;
+
+                        if (spriteRight < camLeft || dx > camRight || spriteBottom < camTop || dy > camBottom) {
+                                return; // Drop off-screen sprite rendering calculations entirely
+                        }
+                }
+        }
+
         SWTexture* texture = swr->textures[pageId];
 
-	if (UNLIKELY(swrMustRotate(angleDeg)))
-	{
-		float pivotX = (x - dx) * swrSgn(xscale);
-		float pivotY = (y - dy) * swrSgn(yscale);
-		
-		if (tpag->targetWidth != tpag->sourceWidth)
-			pivotX *= (float)tpag->targetWidth / tpag->sourceWidth;
-		if (tpag->targetHeight != tpag->sourceHeight)
-			pivotY *= (float)tpag->targetHeight/ tpag->sourceHeight;
-		
-		swrDrawSpriteRotated(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, pivotX, pivotY);
-	}
-	else
-	{
-		swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
-	}
+        if (UNLIKELY(swrMustRotate(angleDeg)))
+        {
+                float pivotX = (x - dx) * swrSgn(xscale);
+                float pivotY = (y - dy) * swrSgn(yscale);
+
+                if (tpag->targetWidth != tpag->sourceWidth)
+                        pivotX *= (float)tpag->targetWidth / tpag->sourceWidth;
+                if (tpag->targetHeight != tpag->sourceHeight)
+                        pivotY *= (float)tpag->targetHeight/ tpag->sourceHeight;
+
+                swrDrawSpriteRotated(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, pivotX, pivotY);
+        }
+        else
+        {
+                swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
+        }
 }
 
 static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
@@ -1417,6 +1437,31 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
         float dy = y;
         int dw = swrCeiling(xscale * sw);
         int dh = swrCeiling(yscale * sh);
+
+        // --- SAFE VISUAL FRUSTUM CULL FOR PARTS & TILES ---
+        if (renderer->runner != nullptr) {
+                GMLCamera* cam = Runner_getCameraForView(renderer->runner, 0);
+                if (cam != nullptr && cam->allocated) {
+                        float pad = 64.0f; // Padding margin to prevent edge-popping artifacts
+                        float camLeft = (float)cam->viewX - pad;
+                        float camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
+                        float camTop = (float)cam->viewY - pad;
+                        float camBottom = (float)cam->viewY + (float)cam->viewHeight + pad;
+
+                        // Normalize dimensions for correct bounding box calculations (handles negative scaling)
+                        float sLeft = dx;
+                        float sRight = dx + (float)dw;
+                        float sTop = dy;
+                        float sBottom = dy + (float)dh;
+
+                        if (dw < 0) { sLeft = dx + (float)dw; sRight = dx; }
+                        if (dh < 0) { sTop = dy + (float)dh; sBottom = dy; }
+
+                        if (sRight < camLeft || sLeft > camRight || sBottom < camTop || sTop > camBottom) {
+                                return; // Safely skip offscreen texture allocations and blits!
+                        }
+                }
+        }
 
         // Defer texture loading/validation check UNTIL we know it is actually visible
         if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
