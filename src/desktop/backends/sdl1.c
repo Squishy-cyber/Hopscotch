@@ -222,22 +222,23 @@ bool platformHandleEvents(void) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch(e.type) {
-	     case SDL_KEYDOWN:
+	    case SDL_KEYDOWN:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
                 {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
                     unsigned int forceChar = 0;
 
-                    if (e.key.keysym.sym == SDLK_SPACE) {        // Physical A
-                        finalGmlKey = 'Z';                       // GML Key Code for Z
-                        forceChar = 'z';                         // Text character z
-                    } else if (e.key.keysym.sym == SDLK_LCTRL) {  // Physical B
-                        finalGmlKey = 'X';                       // GML Key Code for X
-                        forceChar = 'x';                         // Text character x
-                    } else if (e.key.keysym.sym == SDLK_z) {      // Physical Home
-                        finalGmlKey = 'C';                       // GML Key Code for C
-                        forceChar = 'c';                         // Text character c
+                    // Intercept the true Leapster GS hardware keysym values
+                    if (e.key.keysym.sym == 98 || e.key.keysym.sym == 'b') {         // Physical A button
+                        finalGmlKey = 'Z';
+                        forceChar = 'z';
+                    } else if (e.key.keysym.sym == 97 || e.key.keysym.sym == 'a') {  // Physical B button
+                        finalGmlKey = 'X';
+                        forceChar = 'x';
+                    } else if (e.key.keysym.sym == 104 || e.key.keysym.sym == 'h') { // Physical Home button
+                        finalGmlKey = 'C';
+                        forceChar = 'c';
                     }
 
                     RunnerKeyboard_onKeyDown(g_runner->keyboard, finalGmlKey);
@@ -256,9 +257,9 @@ bool platformHandleEvents(void) {
                 {
                     int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
 
-                    if (e.key.keysym.sym == SDLK_SPACE)      finalGmlKey = 'Z';
-                    else if (e.key.keysym.sym == SDLK_LCTRL) finalGmlKey = 'X';
-                    else if (e.key.keysym.sym == SDLK_z)     finalGmlKey = 'C';
+                    if (e.key.keysym.sym == 98 || e.key.keysym.sym == 'b')        finalGmlKey = 'Z';
+                    else if (e.key.keysym.sym == 97 || e.key.keysym.sym == 'a')   finalGmlKey = 'X';
+                    else if (e.key.keysym.sym == 104 || e.key.keysym.sym == 'h')  finalGmlKey = 'C';
 
                     RunnerKeyboard_onKeyUp(g_runner->keyboard, finalGmlKey);
                 }
