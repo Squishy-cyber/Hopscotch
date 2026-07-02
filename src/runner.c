@@ -412,14 +412,11 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
     int32_t slot = EventSlotMap_lookup(&runner->eventSlotMap, eventType, eventSubtype);
     if (slot == -1) return;
 
-    // We always snapshot the iteration list before dispatching so instances spawned during this phase do NOT fire the current event.
     Instance** scratch = runner->eventDispatchInstances;
     arrsetlen(scratch, 0);
 
-    // Only clip Step (3) and Alarm (2) events to save high CPU logic overhead
     bool isLogicEvent = (eventType == EVENT_STEP || eventType == EVENT_ALARM);
     
-    // --- SAFE CAMERA CHECKS ---
     GMLCamera* cam = nullptr;
     bool useCulling = false;
     float camLeft = 0.0f, camRight = 0.0f, camTop = 0.0f, camBottom = 0.0f;
@@ -428,7 +425,7 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
         cam = Runner_getCameraForView(runner, 0);
         useCulling = (cam != nullptr && cam->allocated);
         if (useCulling) {
-            float pad = 240.0f; // Buffer zone so entities don't visibly snap or freeze right at the screen edge
+            float pad = 250.0f; // Wide safety padding margin
             camLeft = (float)cam->viewX - pad;
             camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
             camTop = (float)cam->viewY - pad;
@@ -458,9 +455,9 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
             Instance* inst = scratch[i];
             if (!inst->active) continue;
 
-            // --- PURE-MATH FRUSTUM CULL FOR PER-OBJECT DISPATCH ---
-            // Bypass processing bytecode for visible entities completely off the camera view
-            if (useCulling && inst->visible) {
+            // --- PER-OBJECT DISPATCH CRITICAL GUARD ---
+            // Only cull if it is a visual entity (has a valid sprite) to protect input/state managers
+            if (useCulling && inst->visible && inst->spriteIndex >= 0) {
                 if (inst->x < camLeft || inst->x > camRight || inst->y < camTop || inst->y > camBottom) {
                     continue; 
                 }
@@ -481,8 +478,8 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
         Instance* inst = scratch[i];
         if (!inst->active) continue;
 
-        // --- PURE-MATH FRUSTUM CULL FOR GLOBAL DISPATCH ---
-        if (useCulling && inst->visible) {
+        // --- GLOBAL DISPATCH CRITICAL GUARD ---
+        if (useCulling && inst->visible && inst->spriteIndex >= 0) {
             if (inst->x < camLeft || inst->x > camRight || inst->y < camTop || inst->y > camBottom) {
                 continue;
             }
