@@ -231,11 +231,19 @@ bool platformHandleEvents(void) {
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                // --- DIRECT SOURCE REMAP ---
-                int rawKeySym = e.key.keysym.sym;
-                if (rawKeySym == SDLK_SPACE)      e.key.keysym.sym = SDLK_z; // A button sends Z
-                else if (rawKeySym == SDLK_LCTRL) e.key.keysym.sym = SDLK_x; // B button sends X
-                else if (rawKeySym == SDLK_z)     e.key.keysym.sym = SDLK_c; // Home button sends C
+                // --- DIRECT SOURCE SYMBOL & UNICODE REMAP ---
+                if (e.key.keysym.sym == SDLK_SPACE) {
+                    e.key.keysym.sym = SDLK_z;
+                    if (e.key.keysym.unicode != 0) e.key.keysym.unicode = 'z';
+                }
+                else if (e.key.keysym.sym == SDLK_LCTRL) {
+                    e.key.keysym.sym = SDLK_x;
+                    if (e.key.keysym.unicode != 0) e.key.keysym.unicode = 'x';
+                }
+                else if (e.key.keysym.sym == SDLK_z) {
+                    e.key.keysym.sym = SDLK_c;
+                    if (e.key.keysym.unicode != 0) e.key.keysym.unicode = 'c';
+                }
 
                 RunnerKeyboard_onKeyDown(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
                 if (e.key.keysym.unicode != 0)
@@ -246,7 +254,7 @@ bool platformHandleEvents(void) {
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                // --- DIRECT SOURCE REMAP ---
+                // --- DIRECT SOURCE SYMBOL REMAP ---
                 if (e.key.keysym.sym == SDLK_SPACE)      e.key.keysym.sym = SDLK_z;
                 else if (e.key.keysym.sym == SDLK_LCTRL) e.key.keysym.sym = SDLK_x;
                 else if (e.key.keysym.sym == SDLK_z)     e.key.keysym.sym = SDLK_c;
