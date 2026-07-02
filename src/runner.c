@@ -416,6 +416,26 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
     Instance** scratch = runner->eventDispatchInstances;
     arrsetlen(scratch, 0);
 
+    // Only clip Step (3) and Alarm (2) events to save high CPU logic overhead
+    bool isLogicEvent = (eventType == EVENT_STEP || eventType == EVENT_ALARM);
+    
+    // --- SAFE CAMERA CHECKS ---
+    GMLCamera* cam = nullptr;
+    bool useCulling = false;
+    float camLeft = 0.0f, camRight = 0.0f, camTop = 0.0f, camBottom = 0.0f;
+    
+    if (isLogicEvent) {
+        cam = Runner_getCameraForView(runner, 0);
+        useCulling = (cam != nullptr && cam->allocated);
+        if (useCulling) {
+            float pad = 240.0f; // Buffer zone so entities don't visibly snap or freeze right at the screen edge
+            camLeft = (float)cam->viewX - pad;
+            camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
+            camTop = (float)cam->viewY - pad;
+            camBottom = (float)cam->viewY + (float)cam->viewHeight + pad;
+        }
+    }
+
     if (eventUsesPerObjectDispatch(eventType)) {
         ResolvedEventTable* table = &runner->eventTable;
         uint32_t entryCount;
@@ -431,12 +451,21 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
             arrsetlen(scratch, base + (size_t) bucketCount);
             memcpy(&scratch[base], bucket, (size_t) bucketCount * sizeof(Instance*));
         }
-        runner->eventDispatchInstances = scratch; // arrsetlen may have realloced
+        runner->eventDispatchInstances = scratch;
 
         int32_t snapshotCount = (int32_t) arrlen(scratch);
         repeat(snapshotCount, i) {
             Instance* inst = scratch[i];
             if (!inst->active) continue;
+
+            // --- PURE-MATH FRUSTUM CULL FOR PER-OBJECT DISPATCH ---
+            // Bypass processing bytecode for visible entities completely off the camera view
+            if (useCulling && inst->visible) {
+                if (inst->x < camLeft || inst->x > camRight || inst->y < camTop || inst->y > camBottom) {
+                    continue; 
+                }
+            }
+
             Runner_executeEvent(runner, inst, eventType, eventSubtype);
         }
         return;
@@ -451,7 +480,14 @@ void Runner_executeEventForAll(Runner* runner, int32_t eventType, int32_t eventS
     repeat(count, i) {
         Instance* inst = scratch[i];
         if (!inst->active) continue;
-        // Skip non-responders without entering Runner_executeEvent. ResolvedEventTable_lookup is a tiny CSR scan; non-responders bail in a few compares and avoid the VM state save/restore overhead inside Runner_executeEventFromObject.
+
+        // --- PURE-MATH FRUSTUM CULL FOR GLOBAL DISPATCH ---
+        if (useCulling && inst->visible) {
+            if (inst->x < camLeft || inst->x > camRight || inst->y < camTop || inst->y > camBottom) {
+                continue;
+            }
+        }
+
         int32_t ownerObjectIndex = -1;
         int32_t codeId = ResolvedEventTable_lookup(&runner->eventTable, inst->objectIndex, slot, &ownerObjectIndex);
         if (0 > codeId) continue;
