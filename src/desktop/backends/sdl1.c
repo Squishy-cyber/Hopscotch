@@ -167,9 +167,9 @@ void *platformGetProcAddress(const char *name) {
 
 static int32_t SDLKeyToGml(int sdlkey) {
     // --- LEAPSTER GS HARDWARE BUTTON REMAP ---
-    if (sdlkey == SDLK_SPACE) return 'Z'; // Physical A -> Engine Z
-    if (sdlkey == SDLK_LCTRL) return 'X'; // Physical B -> Engine X
-    if (sdlkey == SDLK_z)     return 'C'; // Physical Home -> Engine C
+    if (sdlkey == SDLK_SPACE) return VK_SPACE;   // Physical A -> GameMaker Confirm (Space)
+    if (sdlkey == SDLK_LCTRL) return VK_SHIFT;   // Physical B -> GameMaker Cancel/Run (Shift)
+    if (sdlkey == SDLK_z)     return VK_CONTROL; // Physical Home -> GameMaker Menu (Control)
 
     // Letters and numbers are the same as GML
     if (sdlkey >= 'a' && sdlkey <= 'z') return toupper(sdlkey);
