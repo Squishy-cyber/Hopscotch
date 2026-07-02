@@ -231,35 +231,45 @@ bool platformHandleEvents(void) {
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                // --- DIRECT SOURCE SYMBOL & UNICODE REMAP ---
-                if (e.key.keysym.sym == SDLK_SPACE) {
-                    e.key.keysym.sym = SDLK_z;
-                    if (e.key.keysym.unicode != 0) e.key.keysym.unicode = 'z';
-                }
-                else if (e.key.keysym.sym == SDLK_LCTRL) {
-                    e.key.keysym.sym = SDLK_x;
-                    if (e.key.keysym.unicode != 0) e.key.keysym.unicode = 'x';
-                }
-                else if (e.key.keysym.sym == SDLK_z) {
-                    e.key.keysym.sym = SDLK_c;
-                    if (e.key.keysym.unicode != 0) e.key.keysym.unicode = 'c';
-                }
+                {
+                    int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
+                    char forceChar = 0;
 
-                RunnerKeyboard_onKeyDown(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
-                if (e.key.keysym.unicode != 0)
-                    RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
+                    // Absolute Hardware Mapping Override
+                    if (e.key.keysym.sym == SDLK_SPACE) { // Physical A Button
+                        finalGmlKey = 'Z';
+                        forceChar = 'z';
+                    } else if (e.key.keysym.sym == SDLK_LCTRL) { // Physical B Button
+                        finalGmlKey = 'X';
+                        forceChar = 'x';
+                    } else if (e.key.keysym.sym == SDLK_z) { // Physical Home Button
+                        finalGmlKey = 'C';
+                        forceChar = 'c';
+                    }
+
+                    RunnerKeyboard_onKeyDown(g_runner->keyboard, finalGmlKey);
+
+                    if (forceChar != 0) {
+                        RunnerKeyboard_onCharacter(g_runner->keyboard, forceChar);
+                    } else if (e.key.keysym.unicode != 0) {
+                        RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
+                    }
+                }
                 break;
 
             case SDL_KEYUP:
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                // --- DIRECT SOURCE SYMBOL REMAP ---
-                if (e.key.keysym.sym == SDLK_SPACE)      e.key.keysym.sym = SDLK_z;
-                else if (e.key.keysym.sym == SDLK_LCTRL) e.key.keysym.sym = SDLK_x;
-                else if (e.key.keysym.sym == SDLK_z)     e.key.keysym.sym = SDLK_c;
+                {
+                    int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
 
-                RunnerKeyboard_onKeyUp(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
+                    if (e.key.keysym.sym == SDLK_SPACE)      finalGmlKey = 'Z';
+                    else if (e.key.keysym.sym == SDLK_LCTRL) finalGmlKey = 'X';
+                    else if (e.key.keysym.sym == SDLK_z)     finalGmlKey = 'C';
+
+                    RunnerKeyboard_onKeyUp(g_runner->keyboard, finalGmlKey);
+                }
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
