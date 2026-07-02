@@ -222,19 +222,46 @@ bool platformHandleEvents(void) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         switch(e.type) {
-	    case SDL_KEYDOWN:
+	     case SDL_KEYDOWN:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                // DIAGNOSTIC TEST: Force ALL keypresses to look like the Home key
-                RunnerKeyboard_onKeyDown(g_runner->keyboard, 'Z');
-                RunnerKeyboard_onCharacter(g_runner->keyboard, 'z');
+                {
+                    int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
+                    unsigned int forceChar = 0;
+
+                    if (e.key.keysym.sym == SDLK_SPACE) {        // Physical A
+                        finalGmlKey = 'Z';                       // GML Key Code for Z
+                        forceChar = 'z';                         // Text character z
+                    } else if (e.key.keysym.sym == SDLK_LCTRL) {  // Physical B
+                        finalGmlKey = 'X';                       // GML Key Code for X
+                        forceChar = 'x';                         // Text character x
+                    } else if (e.key.keysym.sym == SDLK_z) {      // Physical Home
+                        finalGmlKey = 'C';                       // GML Key Code for C
+                        forceChar = 'c';                         // Text character c
+                    }
+
+                    RunnerKeyboard_onKeyDown(g_runner->keyboard, finalGmlKey);
+
+                    if (forceChar != 0) {
+                        RunnerKeyboard_onCharacter(g_runner->keyboard, forceChar);
+                    } else if (e.key.keysym.unicode != 0) {
+                        RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
+                    }
+                }
                 break;
 
             case SDL_KEYUP:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
 
-                // DIAGNOSTIC TEST: Force ALL releases to look like the Home key
-                RunnerKeyboard_onKeyUp(g_runner->keyboard, 'Z');
+                {
+                    int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
+
+                    if (e.key.keysym.sym == SDLK_SPACE)      finalGmlKey = 'Z';
+                    else if (e.key.keysym.sym == SDLK_LCTRL) finalGmlKey = 'X';
+                    else if (e.key.keysym.sym == SDLK_z)     finalGmlKey = 'C';
+
+                    RunnerKeyboard_onKeyUp(g_runner->keyboard, finalGmlKey);
+                }
                 break;
             case SDL_MOUSEBUTTONDOWN:
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
