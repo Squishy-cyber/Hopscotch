@@ -9843,30 +9843,30 @@ static RValue builtin_merge_color(MAYBE_UNUSED VMContext* ctx, RValue* args, MAY
 }
 
 static RValue builtin_surface_create(VMContext* ctx, RValue* args, MAYBE_UNUSED int32_t argCount) {
-    int32_t width = (int32_t) RValue_toReal(args[0]);
-    int32_t height = (int32_t) RValue_toReal(args[1]);
-    Runner* runner = ctx->runner;
-    if (runner->renderer != nullptr) {
-        int32_t surfaceId = Renderer_createSurface(runner->renderer, width,height);
-        return RValue_makeReal(surfaceId);
-    }
-    return RValue_makeReal(0.0);
+    // Lie to the game and pretend we failed to allocate a surface.
+    // Undertale will naturally handle a 0 or -1 by skipping surface draws.
+    return RValue_makeReal(-1.0);
 }
 
 static RValue builtin_surface_exists(VMContext* ctx, RValue* args, MAYBE_UNUSED int32_t argCount) {
     int32_t surfaceId = (int32_t) RValue_toReal(args[0]);
-    Runner* runner = ctx->runner;
-    if (runner->renderer != nullptr) {
-        bool exists = Renderer_surfaceExists(runner->renderer, surfaceId);
-        if (exists == true) {
-            return RValue_makeReal(1.0);
-        }
+    
+    // If it's asking about the main application surface (usually 0), let it pass.
+    if (surfaceId <= 0) {
+        return RValue_makeReal(1.0); 
     }
+    
+    // Force tell the engine that custom surfaces (like the TV) do not exist.
     return RValue_makeReal(0.0);
 }
 
 static RValue builtin_surface_set_target(VMContext* ctx, RValue* args, MAYBE_UNUSED int32_t argCount) {
     int32_t surfaceId = (int32_t) RValue_toReal(args[0]);
+
+    // NEVER let the engine redirect drawing operations away from the screen
+    if (surfaceId > 0) {
+        return RValue_makeReal(0.0); // Fail safely without changing targets
+    }
 
     Runner* runner = ctx->runner;
     if (Runner_surfaceSetTarget(runner, surfaceId)) {
