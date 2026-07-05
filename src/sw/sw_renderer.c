@@ -1144,6 +1144,14 @@ static void swrDrawSpriteInternal(
                                 else if (texture->buffer == NULL) {
                                         int sliceX = tx >> 8;
                                         int sliceIdx = (sliceY * slicesWide) + sliceX;
+
+					// --- ADD THE HARD MAX SLICE ARRAY GUARD HERE ---
+                                        int maxSlices = ((texture->height + 255) >> 8) * slicesWide;
+                                        if (sliceIdx < 0 || sliceIdx >= maxSlices) {
+                                                continue; // Safe out-of-bounds skip, do not allocate or read junk!
+                                        }
+                                        // -----------------------------------------------
+
                                         if (__builtin_expect(!texture->slices[sliceIdx], 0)) {
                                                 texture->slices[sliceIdx] = swrStreamSliceFromDisk(texture, sliceIdx, 256);
                                         }
