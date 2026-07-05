@@ -1143,10 +1143,12 @@ void Runner_drawViews(Runner* runner, int32_t gameW, int32_t gameH, bool debugSh
             GMLCamera* camera = Runner_getCameraForView(runner, (int32_t) vi);
             if (camera == nullptr) continue;
 
-            bool toSurface = view->surfaceId != -1;
+	    // HARD SURFACE OVERRIDE: Force all surface-targeted views to render as standard screen views
+            // This prevents the SDL 1.2 software backend from desyncing during isolated passes.
+	    bool toSurface = false;
 
             if (toSurface) {
-                // The surface is GONE, skip it!
+                // This entire block will be safely compiled out/skippedThis entire block will be safely compiled out/skipped
                 if (!renderer->vtable->surfaceExists(renderer, view->surfaceId))
                     continue;
 

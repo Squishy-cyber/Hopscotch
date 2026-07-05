@@ -997,12 +997,6 @@ static void swrDrawSpriteInternal(
         fprintf(stderr, "SWR_GEO: PageId %u | Src: %d,%d (%dx%d) -> Dst: %d,%d (%dx%d)\n",
                 texture->masterPageId, sx, sy, sw, sh, dx, dy, dw, dh);
 
-	// HARD SAFETY SHIELD: Reject extreme distortions that corrupt the fixed-point scaling engine
-        if (dw > 1000 || dh > 1000) {
-            fprintf(stderr, "SWR_GEO_SHIELD: Prevented memory corruption from insane bounds. Skipping draw call.\n");
-            return;
-        }
-
         bool flipX = false, flipY = false;
         if (dw < 0) { dx += dw; dw = -dw; flipX = true; }
         if (dh < 0) { dy += dh; dh = -dh; flipY = true; }
