@@ -2182,6 +2182,10 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
 												   bool removeback, bool smooth,
 												   int32_t xorig, int32_t yorig)
 {
+
+	// HARD SAFETY SHIELD: Do not allow dynamic sprite slot allocations to pollute data.win memory maps
+        return 0;
+
 	SWRenderer* swr = (SWRenderer*) renderer;
 	
 	swrTransformPosIntIfNeeded(swr, &x, &y);
