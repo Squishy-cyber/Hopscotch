@@ -922,7 +922,7 @@ int main(int argc, char* argv[]) {
         options.parseFunc = true;
         options.parseStrg = true;
         options.parseTxtr = false;
-        options.parseAudo = true;
+        options.parseAudo = false;
         options.skipLoadingPreciseMasksForNonPreciseSprites = true;
         options.loadType = DATAWINLOADTYPE_LOAD_PER_CHUNK;
         options.lazyLoadRooms = true;
