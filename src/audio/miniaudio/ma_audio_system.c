@@ -225,29 +225,40 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
         bool isCompressed = (sound->flags & AUDIO_ENTRY_FLAG_IS_COMPRESSED) != 0;
         bool inAudo = !isRegular || isEmbedded || isCompressed;
 
-        if (inAudo) {
-            // Embedded audio: decode from AUDO chunk memory
-            if (0 > sound->audioFile || (uint32_t) sound->audioFile >= ma->base.audioGroups[sound->audioGroup]->audo.count) {
-                fprintf(stderr, "Audio: Invalid audio file index %d for sound '%s'\n", sound->audioFile, sound->name);
+	if (inAudo) {
+            // Lazy-load from external staging folder to save RAM instead of parsing from missing AUDO memory chunk
+            char lazyAudioPath[256];
+            bool fileFound = false;
+
+            // PRIORITIZE .WAV: Check for UTMT raw exported wave formats first
+            snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/usr/share/butterscotch/Audio_Slices/sound_%d.wav", soundIndex);
+            if (access(lazyAudioPath, F_OK) == 0) {
+                fileFound = true;
+            } else {
+                // Fall back to .ogg if no wave slice exists
+                snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/usr/share/butterscotch/Audio_Slices/sound_%d.ogg", soundIndex);
+                if (access(lazyAudioPath, F_OK) == 0) {
+                    fileFound = true;
+                }
+            }
+
+            if (!fileFound) {
+                fprintf(stderr, "Audio Error: Lazy-load file not found for sound index %d ('%s')\n", soundIndex, sound->name);
                 return -1;
             }
 
-            AudioEntry* entry = &ma->base.audioGroups[sound->audioGroup]->audo.entries[sound->audioFile];
-
-            ma_decoder_config decoderConfig = ma_decoder_config_init_default();
-            result = ma_decoder_init_memory(entry->data, entry->dataSize, &decoderConfig, &slot->decoder);
+            // Stream directly using miniaudio file handle logic (Auto-reclaimed on stop)
+            // Using MA_SOUND_FLAG_ASYNC allows stream reading so we don't block the main game thread
+            result = ma_sound_init_from_file(&ma->engine, lazyAudioPath, MA_SOUND_FLAG_ASYNC, nullptr, nullptr, &slot->maSound);
             if (result != MA_SUCCESS) {
-                fprintf(stderr, "Audio: Failed to init decoder for '%s' (error %d)\n", sound->name, result);
+                fprintf(stderr, "Audio Error: Failed to init streaming sound file '%s' (error %d)\n", lazyAudioPath, result);
                 return -1;
             }
-            slot->ownsDecoder = true;
 
-            result = ma_sound_init_from_data_source(&ma->engine, &slot->decoder, 0, nullptr, &slot->maSound);
-            if (result != MA_SUCCESS) {
-                fprintf(stderr, "Audio: Failed to init sound from decoder for '%s' (error %d)\n", sound->name, result);
-                ma_decoder_uninit(&slot->decoder);
-                return -1;
-            }
+            // CRITICAL FIX: Since we are routing an internal game audio index to an external file
+            // decoder on-the-fly, we explicitly mark that miniaudio owns the file handle stream.
+            slot->ownsDecoder = false;
+
         } else {
             // External audio: load from file
             char* path = resolveExternalPath(ma, sound);
