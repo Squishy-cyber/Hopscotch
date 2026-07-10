@@ -231,12 +231,12 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
             bool fileFound = false;
 
             // Prioritize .wav files using the original asset string name
-            snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/usr/share/butterscotch/Audio_Slices/%s.wav", sound->name);
+            snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/roms/butterscotch/Audio_Slices/%s.wav", sound->name);
             if (access(lazyAudioPath, F_OK) == 0) {
                 fileFound = true;
             } else {
                 // Fall back to .ogg version if it exists
-                snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/usr/share/butterscotch/Audio_Slices/%s.ogg", sound->name);
+                snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/roms/butterscotch/Audio_Slices/%s.ogg", sound->name);
                 if (access(lazyAudioPath, F_OK) == 0) {
                     fileFound = true;
                 }
