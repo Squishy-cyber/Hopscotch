@@ -993,10 +993,6 @@ static void swrDrawSpriteInternal(
 {
         SWRenderer *swr = (SWRenderer*) renderer;
 
-        // Keep your telemetry logs intact
-        fprintf(stderr, "SWR_GEO: PageId %u | Src: %d,%d (%dx%d) -> Dst: %d,%d (%dx%d)\n",
-                texture->masterPageId, sx, sy, sw, sh, dx, dy, dw, dh);
-
         bool flipX = false, flipY = false;
         if (dw < 0) { dx += dw; dw = -dw; flipX = true; }
         if (dh < 0) { dy += dh; dh = -dh; flipY = true; }
