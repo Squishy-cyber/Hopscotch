@@ -2179,8 +2179,12 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
 												   int32_t xorig, int32_t yorig)
 {
 
-	// HARD SAFETY SHIELD: Do not allow dynamic sprite slot allocations to pollute data.win memory maps
-        return 0;
+	// SMART SAFETY SHIELD
+	// Only allow capturing from the main screen backbuffer (surfaceID == -1).
+        // Block custom offscreen surfaces (surfaceID != -1) which are unsupported and cause Chapter 2 memory pollution.
+	if (surfaceID != -1) {
+        	return 0;
+	}
 
 	SWRenderer* swr = (SWRenderer*) renderer;
 	
