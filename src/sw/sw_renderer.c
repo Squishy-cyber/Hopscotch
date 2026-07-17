@@ -2187,63 +2187,69 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
         (void) removeback;
         (void) smooth;
 
+        // Block custom offscreen surfaces to keep Chapter 2 fully stable
         if (surfaceID != -1) {
                 return 0;
         }
 
-        // --- BULLETPROOF RECYCLE ENGINE ---
-        // We look for dynamic slots managed by the runtime, rather than static arrays
-        int32_t texturePageId = swrFindSurfaceTextureSlot(swr);
-        int32_t tpagIndex = swrFindSurfaceTPagSlot(swr);
-        
-        // Fallback safety if the engine's built-in slots fail
-        if (texturePageId == -1 || tpagIndex == -1) {
-                texturePageId = 0;
-                tpagIndex = 0;
-        }
-
-        // Safely free old dynamic texture memory ONLY if it was created dynamically
-        if (swr->textures[texturePageId] != NULL) {
-                if (swr->textures[texturePageId]->buffer != NULL) {
-                        free(swr->textures[texturePageId]->buffer);
-                }
-                free(swr->textures[texturePageId]);
-                swr->textures[texturePageId] = NULL;
-        }
-
-        SWTexture* tex = swrCreateTexture(NULL, w, h);
-
-        // [Pixel grabbing loops stay exactly as they are...]
-        for (int iy = 0; iy < h; iy++) { /* ... standard pixel copying logic ... */ }
-
-        int32_t spriteW = w;
-        int32_t spriteH = h;
-        int32_t targetW = spriteW;
-        int32_t targetH = spriteH;
-        swrReverseTransformSizeIntIfNeeded(swr, &targetW, &targetH);
-
-        swr->textures[texturePageId] = tex;
-
         DataWin* dw = swr->base.dataWin;
-        TexturePageItem* tpag = &dw->tpag.items[tpagIndex];
-        tpag->sourceX = 0;
-        tpag->sourceY = 0;
-        tpag->sourceWidth = (uint16_t) spriteW;
-        tpag->sourceHeight = (uint16_t) spriteH;
-        tpag->targetX = 0;
-        tpag->targetY = 0;
-        tpag->targetWidth = (uint16_t) (spriteW * swr->viewW / swr->portW);
-        tpag->targetHeight = (uint16_t) (spriteH * swr->viewH / swr->portH);
-        tpag->boundingWidth = (uint16_t) spriteW;
-        tpag->boundingHeight = (uint16_t) spriteH;
-        tpag->texturePageId = texturePageId;
 
-        // Persistent static container inside the function scope to hold our recycling slot index
+        // --- THE ISOLATED SANDBOX CANVAS ---
+        // We maintain a single, dedicated static texture pointer that belongs purely 
+        // to this function. It never touches or pollutes the data.win asset arrays!
+        static SWTexture* sandboxTex = NULL;
+
+        // Free the previous frame's capture safely before allocating the new one
+        if (sandboxTex != NULL) {
+                if (sandboxTex->buffer != NULL) {
+                        free(sandboxTex->buffer);
+                }
+                free(sandboxTex);
+                sandboxTex = NULL;
+        }
+
+        sandboxTex = swrCreateTexture(NULL, w, h);
+        if (!sandboxTex || !sandboxTex->buffer) {
+                return 0;
+        }
+
+        // grab the pixels from the frame buffer
+        for (int iy = 0; iy < h; iy++)
+        {
+                uintpixel_t* dstline = &sandboxTex->buffer[iy * sandboxTex->width];
+                if ((iy + y) < 0 || (iy + y) >= swr->height)
+                {
+                        for (int ix = 0; ix < w; ix++)
+                                dstline[ix] = 0;
+                        continue;
+                }
+
+                uintpixel_t* srcline = &swr->fb[(iy + y) * swr->width + x];
+
+                int ix = 0, sx = x;
+                for (; sx < 0 && ix < w; sx++, ix++)
+                        dstline[ix] = 0;
+
+                for (; sx < swr->width && ix < w; sx++, ix++)
+#if PIXEL_SIZE == 8
+                        dstline[ix] = srcline[ix];
+#else
+                        dstline[ix] = srcline[ix] | TRANSPARENT_MASK;
+#endif
+
+                for (; ix < w; ix++)
+                        dstline[ix] = 0;
+        }
+
+        // Persistent static tracking index to keep the asset registry stable
         static int32_t recycledSpriteIndex = -1;
-
-        // Allocating the sprite slot ONLY ONCE on the very first execution pass
         if (recycledSpriteIndex == -1) {
                 recycledSpriteIndex = DataWin_allocSpriteSlot(dw, swr->originalSpriteCount);
+        }
+
+        // Guard configuration bounds safely
+        if (recycledSpriteIndex < 0 || recycledSpriteIndex >= (int32_t)dw->sprt.count) {
+                return 0;
         }
 
         Sprite* sprite = &dw->sprt.sprites[recycledSpriteIndex];
@@ -2253,13 +2259,32 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
         sprite->originY = yorig;
         sprite->textureCount = 1;
 
-        // Allocate the single tracking array exactly once to bypass the leak
         if (sprite->tpagIndices == NULL) {
                 sprite->tpagIndices = safeMalloc(sizeof(int32_t));
         }
-        sprite->tpagIndices[0] = (int32_t) tpagIndex;
+
+        // We use a high, dummy, out-of-the-way tpag index that won't conflict with slot 0
+        sprite->tpagIndices[0] = 9999;
         sprite->maskCount = 0;
         sprite->masks = nullptr;
+
+        // Directly assign our standalone texture pointer into the renderer's tracking table
+        // under an out-of-bounds index, or override the texture page lookup mapping.
+        // To make sure the drawing routine catches it, we bind it to a safe custom index:
+        int32_t customTextureSlot = swr->totalTextureCount - 1;
+        if (customTextureSlot >= 0) {
+                swr->textures[customTextureSlot] = sandboxTex;
+
+                // Point our texture page item structural reference to our standalone slot
+                if (9999 < dw->tpag.count) {
+                        TexturePageItem* tpag = &dw->tpag.items[9999];
+                        tpag->sourceX = 0;
+                        tpag->sourceY = 0;
+                        tpag->sourceWidth = (uint16_t) w;
+                        tpag->sourceHeight = (uint16_t) h;
+                        tpag->texturePageId = customTextureSlot;
+                }
+        }
 
         return recycledSpriteIndex;
 }
@@ -2267,7 +2292,7 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
 static void SWRenderer_deleteSprite(Renderer* renderer, int32_t spriteIndex)
 {
 	SWRenderer* swr = (SWRenderer*) renderer;
-	
+
 	DataWin* dw = renderer->dataWin;
 	if (0 > spriteIndex || dw->sprt.count <= (uint32_t) spriteIndex) return;
 
@@ -2294,10 +2319,10 @@ static void SWRenderer_deleteSprite(Renderer* renderer, int32_t spriteIndex)
 			tpag->texturePageId = -1;
 		}
 	}
-	
+
 	free(sprite->tpagIndices);
 	sprite->tpagIndices = NULL;
-	
+
 	const char* keepName = sprite->name;
 	memset(sprite, 0, sizeof(Sprite));
 	sprite->name = keepName;
@@ -2331,9 +2356,9 @@ static RendererVtable swrVtable;
 void SWRenderer_clearFrameBuffer(Renderer* renderer, uint32_t color)
 {
 	SWRenderer* swr = (SWRenderer*) renderer;
-	
+
 	uintpixel_t pxcolor = swrConvertPixel(color);
-	
+
 	size_t fbSize = swr->fbPitch;
 	fbSize *= swr->height;
 	for (size_t i = 0; i < fbSize; i++)
