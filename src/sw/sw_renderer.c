@@ -1091,9 +1091,15 @@ static void swrDrawSpriteInternal(
                                         }
                                         uint16_t p16 = texture->slices[0][rowOffset + tx];
                                         if (p16 == 0) continue;
-                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
-                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
-                                        uint32_t b = (p16         & 0x1F) << 3;
+
+                                        uint32_t r, g, b;
+                                        if (p16 == 0x0821) {
+                                                r = 0; g = 0; b = 0;
+                                        } else {
+                                                r = ((p16 >> 11) & 0x1F) << 3;
+                                                g = ((p16 >> 5)  & 0x3F) << 2;
+                                                b = (p16         & 0x1F) << 3;
+                                        }
                                         pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
                                 }
                                 else if (texture->buffer == NULL) {
@@ -1104,9 +1110,15 @@ static void swrDrawSpriteInternal(
                                         }
                                         uint16_t p16 = texture->slices[sliceIdx][rowOffset + (tx & 255)];
                                         if (p16 == 0) continue;
-                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
-                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
-                                        uint32_t b = (p16         & 0x1F) << 3;
+
+                                        uint32_t r, g, b;
+                                        if (p16 == 0x0821) {
+                                                r = 0; g = 0; b = 0;
+                                        } else {
+                                                r = ((p16 >> 11) & 0x1F) << 3;
+                                                g = ((p16 >> 5)  & 0x3F) << 2;
+                                                b = (p16         & 0x1F) << 3;
+                                        }
                                         pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
                                 }
                                 else {
@@ -1118,14 +1130,13 @@ static void swrDrawSpriteInternal(
                         }
                 }
         }
-else
+        else
         {
                 fixedp_t ys2 = iys2;
                 for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
                 {
                         uintpixel_t* dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
 
-                        // FIX: Force sub-pixel tracking calculation if the sprite is flipped vertically
                         int ty = sy + ((dh == sh && !flipY) ? ys : (int)(ys2 >> fp_prec));
 
                         int sliceY = ty >> 8;
@@ -1137,7 +1148,6 @@ else
                         fixedp_t xs2 = ixs2;
                         for (int x = 0, xs = ixs; x < dw; x++, xs += oxs, xs2 += oxs2)
                         {
-                                // FIX: Force sub-pixel tracking calculation if the sprite is flipped horizontally
                                 int tx = sx + ((dw == sw && !flipX) ? xs : (int)(xs2 >> fp_prec));
                                 uintpixel_t pixel;
 
@@ -1147,30 +1157,40 @@ else
                                         }
                                         uint16_t p16 = texture->slices[0][rowOffset + tx];
                                         if (p16 == 0) continue;
-                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
-                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
-                                        uint32_t b = (p16         & 0x1F) << 3;
+
+                                        uint32_t r, g, b;
+                                        if (p16 == 0x0821) {
+                                                r = 0; g = 0; b = 0;
+                                        } else {
+                                                r = ((p16 >> 11) & 0x1F) << 3;
+                                                g = ((p16 >> 5)  & 0x3F) << 2;
+                                                b = (p16         & 0x1F) << 3;
+                                        }
                                         pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
                                 }
                                 else if (texture->buffer == NULL) {
                                         int sliceX = tx >> 8;
                                         int sliceIdx = (sliceY * slicesWide) + sliceX;
 
-					// --- ADD THE HARD MAX SLICE ARRAY GUARD HERE ---
                                         int maxSlices = ((texture->height + 255) >> 8) * slicesWide;
                                         if (sliceIdx < 0 || sliceIdx >= maxSlices) {
-                                                continue; // Safe out-of-bounds skip, do not allocate or read junk!
+                                                continue;
                                         }
-                                        // -----------------------------------------------
 
                                         if (__builtin_expect(!texture->slices[sliceIdx], 0)) {
                                                 texture->slices[sliceIdx] = swrStreamSliceFromDisk(texture, sliceIdx, 256);
                                         }
                                         uint16_t p16 = texture->slices[sliceIdx][rowOffset + (tx & 255)];
                                         if (p16 == 0) continue;
-                                        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
-                                        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
-                                        uint32_t b = (p16         & 0x1F) << 3;
+
+                                        uint32_t r, g, b;
+                                        if (p16 == 0x0821) {
+                                                r = 0; g = 0; b = 0;
+                                        } else {
+                                                r = ((p16 >> 11) & 0x1F) << 3;
+                                                g = ((p16 >> 5)  & 0x3F) << 2;
+                                                b = (p16         & 0x1F) << 3;
+                                        }
                                         pixel = (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
                                 }
                                 else {
