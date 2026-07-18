@@ -353,12 +353,17 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
                         texture->slices[0] = swrStreamSliceFromDisk(texture, 0, 256);
                 }
                 uint16_t p16 = texture->slices[0][(y * 256) + x];
-                if (p16 == 0) return 0; // Transparent fallback
-                
-                // Unpack RGB565 back into standard 32-bit format
-                uint32_t r = ((p16 >> 11) & 0x1F) << 3;
-                uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
-                uint32_t b = (p16         & 0x1F) << 3;
+                if (p16 == 0) return 0; 
+
+                // Unpack with symmetric bit-replication
+                uint32_t r5 = (p16 >> 11) & 0x1F;
+                uint32_t g6 = (p16 >> 5)  & 0x3F;
+                uint32_t b5 = p16         & 0x1F;
+
+                uint32_t r = (r5 << 3) | (r5 >> 2);
+                uint32_t g = (g6 << 2) | (g6 >> 4);
+                uint32_t b = (b5 << 3) | (b5 >> 2);
+
                 return (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
         }
 
@@ -380,12 +385,15 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
         uint16_t p16 = texture->slices[sliceIndex][(localY << 8) + localX];
         if (p16 == 0) return 0;
 
-        // Unpack RGB565 back into standard 32-bit format on-the-fly
-        uint32_t r = ((p16 >> 11) & 0x1F) << 3;
-        uint32_t g = ((p16 >> 5)  & 0x3F) << 2;
-        uint32_t b = (p16         & 0x1F) << 3;
-        
-        // Return matching 32-bit colors structure
+        // Unpack with symmetric bit-replication on-the-fly
+        uint32_t r5 = (p16 >> 11) & 0x1F;
+        uint32_t g6 = (p16 >> 5)  & 0x3F;
+        uint32_t b5 = p16         & 0x1F;
+
+        uint32_t r = (r5 << 3) | (r5 >> 2);
+        uint32_t g = (g6 << 2) | (g6 >> 4);
+        uint32_t b = (b5 << 3) | (b5 >> 2);
+
         return (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
 }
 
