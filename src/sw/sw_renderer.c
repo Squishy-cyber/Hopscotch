@@ -1825,135 +1825,131 @@ static bool swrResolveGlyph(
 
 static void swrDrawText(SWRenderer* swr, const char* text, float x, float y, float xscale, float yscale, float angleDeg, int32_t color, float alpha, float lineSeparation)
 {
-	Renderer* renderer = &swr->base;
-	DataWin* dwin = renderer->dataWin;
-	
-	int32_t fontIndex = renderer->drawFont;
-	if (0 > fontIndex || dwin->font.count <= (uint32_t) fontIndex) return;
+        Renderer* renderer = &swr->base;
+        DataWin* dwin = renderer->dataWin;
 
-	Font* font = &dwin->font.fonts[fontIndex];
-	
-	SwrFontState fontState;
-	if (!swrResolveFontState(swr, dwin, font, &fontState)) return;
-	
-	// TODO: do we need to mirror the way the text scrolls too?!
-	float cosA = 1.0f, sinA = 0.0f, angleRad = 0.0f;
-	bool mustRotate = swrMustRotateTolerant(angleDeg);
-	if (UNLIKELY(mustRotate))
-	{
-		angleRad = -angleDeg * M_PI / 180.0f;
-		cosA = cosf(angleRad);
-		sinA = sinf(angleRad);
-	}
-	
-	int textLen = (int) strlen(text);
-	int lineCount = TextUtils_countLines(text, textLen);
-    float lineStride = (0.0f > lineSeparation) ? TextUtils_lineStride(font) : (lineSeparation / (font->scaleY != 0.0f ? font->scaleY : 1.0f));
+        int32_t fontIndex = renderer->drawFont;
+        if (0 > fontIndex || dwin->font.count <= (uint32_t) fontIndex) return;
 
-	// Vertical alignment offset
-	float totalHeight = (float) lineCount * lineStride;
-	float valignOffset = 0;
-	if (renderer->drawValign == 1) valignOffset = -totalHeight / 2.0f;
-	else if (renderer->drawValign == 2) valignOffset = -totalHeight;
-	
-	xscale *= font->scaleX;
-	yscale *= font->scaleY;
+        Font* font = &dwin->font.fonts[fontIndex];
 
-	// Iterate through lines. HTML5 subtracts ascenderOffset from the per-line y offset
-	// (see yyFont.GR_Text_Draw), shifting glyphs up so the baseline aligns with the drawn y.
-	float cursorY = valignOffset - (float) font->ascenderOffset;
-	int32_t lineStart = 0;
+        SwrFontState fontState;
+        if (!swrResolveFontState(swr, dwin, font, &fontState)) return;
 
-	for (int32_t lineIdx = 0; lineCount > lineIdx; lineIdx++) {
-		// Find end of current line
-		int32_t lineEnd = lineStart;
-		while (textLen > lineEnd && !TextUtils_isNewlineChar(text[lineEnd])) {
-			lineEnd++;
-		}
-		int32_t lineLen = lineEnd - lineStart;
+        float cosA = 1.0f, sinA = 0.0f, angleRad = 0.0f;
+        bool mustRotate = swrMustRotateTolerant(angleDeg);
+        if (UNLIKELY(mustRotate))
+        {
+                angleRad = -angleDeg * M_PI / 180.0f;
+                cosA = cosf(angleRad);
+                sinA = sinf(angleRad);
+        }
 
-		// Horizontal alignment offset for this line
-		float lineWidth = TextUtils_measureLineWidth(font, text + lineStart, lineLen);
-		float halignOffset = 0;
-		if (renderer->drawHalign == 1) halignOffset = -lineWidth / 2.0f;
-		else if (renderer->drawHalign == 2) halignOffset = -lineWidth;
+        int textLen = (int) strlen(text);
+        int lineCount = TextUtils_countLines(text, textLen);
+        float lineStride = (0.0f > lineSeparation) ? TextUtils_lineStride(font) : (lineSeparation / (font->scaleY != 0.0f ? font->scaleY : 1.0f));
 
-		float cursorX = halignOffset;
+        // Vertical alignment offset
+        float totalHeight = (float) lineCount * lineStride;
+        float valignOffset = 0;
+        if (renderer->drawValign == 1) valignOffset = -totalHeight / 2.0f;
+        else if (renderer->drawValign == 2) valignOffset = -totalHeight;
 
-		// Render each glyph in the line - decode each codepoint once and carry it forward as next iteration's ch (also used for kerning)
-		int32_t pos = 0;
-		uint16_t ch = 0;
-		bool hasCh = false;
-		if (lineLen > pos) {
-			ch = TextUtils_decodeUtf8(text + lineStart, lineLen, &pos);
-			hasCh = true;
-		}
+        xscale *= font->scaleX;
+        yscale *= font->scaleY;
 
-		while (hasCh) {
-			FontGlyph* glyph = TextUtils_findGlyph(font, ch);
+        // Iterate through lines
+        float cursorY = valignOffset - (float) font->ascenderOffset;
+        int32_t lineStart = 0;
 
-			uint16_t nextCh = 0;
-			bool hasNext = lineLen > pos;
-			if (hasNext) nextCh = TextUtils_decodeUtf8(text + lineStart, lineLen, &pos);
+        for (int32_t lineIdx = 0; lineCount > lineIdx; lineIdx++) {
+                // Find end of current line
+                int32_t lineEnd = lineStart;
+                while (textLen > lineEnd && !TextUtils_isNewlineChar(text[lineEnd])) {
+                        lineEnd++;
+                }
+                int32_t lineLen = lineEnd - lineStart;
 
-			if (glyph != nullptr) {
-				bool drewSuccessfully = false;
-				if (glyph->sourceWidth != 0 && glyph->sourceHeight != 0) {
-					int fontTpagIndex = 0, pageId = 0;
-					int sx, sy, sw, sh, dw, dh;
-					float dx, dy;
-					if (swrResolveGlyph(swr, dwin, &fontState, glyph, cursorX, cursorY,
-							&fontTpagIndex, &pageId, &sx, &sy, &sw, &sh, &dx, &dy))
-					{
-						dx *= xscale; dx += x;
-						dy *= xscale; dy += y;
-						dw = swrCeiling(xscale * glyph->sourceWidth);
-						dh = swrCeiling(yscale * glyph->sourceHeight);
-						
-						// TODO: at 640x480, for some reason, without this fixup the
-						// letters in the "Name the fallen human." screen don't shake
-						dx = roundf(dx * 2) / 2;
-						dy = roundf(dy * 2) / 2;
-						
-						SWTexture* texture = swr->textures[pageId];
-						
-						if (UNLIKELY(mustRotate))
-						{
-							dx -= x;
-							dy -= y;
-							float ndx = cosA * dx - sinA * dy;
-							float ndy = sinA * dx + cosA * dy;
-							ndx += x;
-							ndy += y;
-							swrDrawSpriteRotated(renderer, ndx, ndy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, 0.0f, 0.0f);
-						}
-						else
-						{
-							swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
-						}
-						
-						drewSuccessfully = true;
-					}
-				}
+                // Horizontal alignment offset for this line
+                float lineWidth = TextUtils_measureLineWidth(font, text + lineStart, lineLen);
+                float halignOffset = 0;
+                if (renderer->drawHalign == 1) halignOffset = -lineWidth / 2.0f;
+                else if (renderer->drawHalign == 2) halignOffset = -lineWidth;
 
-				cursorX += glyph->shift;
-				if (drewSuccessfully && hasNext) {
-					cursorX += TextUtils_getKerningOffset(glyph, nextCh);
-				}
-			}
+                float cursorX = halignOffset;
 
-			ch = nextCh;
-			hasCh = hasNext;
-		}
+                // Render each glyph in the line
+                int32_t pos = 0;
+                uint16_t ch = 0;
+                bool hasCh = false;
+                if (lineLen > pos) {
+                        ch = TextUtils_decodeUtf8(text + lineStart, lineLen, &pos);
+                        hasCh = true;
+                }
 
-		cursorY += lineStride;
-		// Skip past the newline, treating \r\n and \n\r as single breaks
-		if (textLen > lineEnd) {
-			lineStart = TextUtils_skipNewline(text, lineEnd, textLen);
-		} else {
-			lineStart = lineEnd;
-		}
-	}
+                while (hasCh) {
+                        FontGlyph* glyph = TextUtils_findGlyph(font, ch);
+
+                        uint16_t nextCh = 0;
+                        bool hasNext = lineLen > pos;
+                        if (hasNext) nextCh = TextUtils_decodeUtf8(text + lineStart, lineLen, &pos);
+
+                        if (glyph != nullptr) {
+                                bool drewSuccessfully = false;
+                                if (glyph->sourceWidth != 0 && glyph->sourceHeight != 0) {
+                                        int fontTpagIndex = 0, pageId = 0;
+                                        int sx, sy, sw, sh, dw, dh;
+                                        float dx, dy;
+                                        if (swrResolveGlyph(swr, dwin, &fontState, glyph, cursorX, cursorY,
+                                                                &fontTpagIndex, &pageId, &sx, &sy, &sw, &sh, &dx, &dy))
+                                        {
+                                                dx *= xscale; dx += x;
+                                                dy *= yscale; dy += y; // Fixed yscale multiplier bug from original source too
+
+                                                // OPTIMIZATION: Fast integer coordinates for native 240p display
+                                                dx = (float)((int)dx);
+                                                dy = (float)((int)dy);
+                                                dw = (int)(xscale * glyph->sourceWidth);
+                                                dh = (int)(yscale * glyph->sourceHeight);
+
+                                                SWTexture* texture = swr->textures[pageId];
+
+                                                if (UNLIKELY(mustRotate))
+                                                {
+                                                        dx -= x;
+                                                        dy -= y;
+                                                        float ndx = cosA * dx - sinA * dy;
+                                                        float ndy = sinA * dx + cosA * dy;
+                                                        ndx += x;
+                                                        ndy += y;
+                                                        swrDrawSpriteRotated(renderer, ndx, ndy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, 0.0f, 0.0f);
+                                                }
+                                                else
+                                                {
+                                                        swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
+                                                }
+
+                                                drewSuccessfully = true;
+                                        }
+                                }
+
+                                cursorX += glyph->shift;
+                                if (drewSuccessfully && hasNext) {
+                                        cursorX += TextUtils_getKerningOffset(glyph, nextCh);
+                                }
+                        }
+
+                        ch = nextCh;
+                        hasCh = hasNext;
+                }
+
+                cursorY += lineStride;
+                if (textLen > lineEnd) {
+                        lineStart = TextUtils_skipNewline(text, lineEnd, textLen);
+                } else {
+                        lineStart = lineEnd;
+                }
+        }
 }
 
 static void SWRenderer_drawText(Renderer* renderer, const char* text, float x, float y,
