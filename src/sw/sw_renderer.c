@@ -1054,7 +1054,7 @@ static void swrDrawSpriteInternal(
         fixedp_t ixs2 = ixs * xstep;
         fixedp_t iys2 = iys * ystep;
 
-        if (xstep == (1 << fp_prec) && ystep == (1 << fp_prec))
+        if (xstep == (1 << fp_prec) && ystep == (1 << fp_prec) && !flipX && !flipY)
         {
                 fixedp_t ys2 = (fixedp_t) iys2;
                 for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
