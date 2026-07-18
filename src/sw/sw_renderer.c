@@ -1947,73 +1947,85 @@ static void SWRenderer_drawTextColor(Renderer* renderer, const char* text, float
 }
 
 static void SWRenderer_drawTiled(Renderer* renderer, int32_t tpagIndex,
-								 float originX, float originY, float x, float y,
-								 float xscale, float yscale, bool tileX, bool tileY,
-								 float roomW, float roomH, uint32_t color, float alpha)
+                                 float originX, float originY, float x, float y,
+                                 float xscale, float yscale, bool tileX, bool tileY,
+                                 float roomW, float roomH, uint32_t color, float alpha)
 {
-	SWRenderer* swr = (SWRenderer*) renderer;
-	DataWin* dwin = renderer->dataWin;
+        SWRenderer* swr = (SWRenderer*) renderer;
+        DataWin* dwin = renderer->dataWin;
 
-	if (0 > tpagIndex || dwin->tpag.count <= (uint32_t) tpagIndex) return;
+        if (0 > tpagIndex || dwin->tpag.count <= (uint32_t) tpagIndex) return;
 
-	TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
-	int16_t pageId = tpag->texturePageId;
-	if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) return;
-	if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
+        TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
+        int16_t pageId = tpag->texturePageId;
+        if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) return;
+        if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
 
-	float axScale = fabsf(xscale);
-	float ayScale = fabsf(yscale);
-	float tileW = (float) tpag->boundingWidth * axScale;
-	float tileH = (float) tpag->boundingHeight * ayScale;
-	if (0 >= tileW || 0 >= tileH) return;
+        float axScale = fabsf(xscale);
+        float ayScale = fabsf(yscale);
+        float tileW = (float) tpag->boundingWidth * axScale;
+        float tileH = (float) tpag->boundingHeight * ayScale;
+        if (0 >= tileW || 0 >= tileH) return;
 
-	float startX, endX, startY, endY;
-	if (tileX) {
-		startX = fmodf(x - originX * axScale, tileW);
-		if (startX > 0) startX -= tileW;
-		endX = roomW;
-	} else {
-		startX = x - originX * axScale;
-		endX = startX + tileW;
-	}
-	if (tileY) {
-		startY = fmodf(y - originY * ayScale, tileH);
-		if (startY > 0) startY -= tileH;
-		endY = roomH;
-	} else {
-		startY = y - originY * ayScale;
-		endY = startY + tileH;
-	}
-	
-	int sx = tpag->sourceX;
-	int sy = tpag->sourceY;
-	int sw = tpag->sourceWidth;
-	int sh = tpag->sourceHeight;
+        float startX, endX, startY, endY;
+        if (tileX) {
+                startX = fmodf(x - originX * axScale, tileW);
+                if (startX > 0) startX -= tileW;
+                endX = roomW;
+        } else {
+                startX = x - originX * axScale;
+                endX = startX + tileW;
+        }
+        if (tileY) {
+                startY = fmodf(y - originY * ayScale, tileH);
+                if (startY > 0) startY -= tileH;
+                endY = roomH;
+        } else {
+                startY = y - originY * ayScale;
+                endY = startY + tileH;
+        }
 
-	int localX0 = tpag->targetX - originX;
-	int localY0 = tpag->targetY - originY;
-	int localX1 = localX0 + tpag->sourceWidth;
-	int localY1 = localY0 + tpag->sourceHeight;
-	int sx0 = xscale * localX0;
-	int sy0 = yscale * localY0;
-	int sx1 = xscale * localX1;
-	int sy1 = yscale * localY1;
+        int sx = tpag->sourceX;
+        int sy = tpag->sourceY;
+        int sw = tpag->sourceWidth;
+        int sh = tpag->sourceHeight;
 
-	for (int dy = startY; endY > dy; dy += tileH) {
-		int cy = dy + (int)(originY * ayScale);
-		int vy0 = cy + sy0;
-		int vy1 = cy + sy1;
-		int dh = vy1 - vy0;
+        int localX0 = tpag->targetX - originX;
+        int localY0 = tpag->targetY - originY;
+        int localX1 = localX0 + tpag->sourceWidth;
+        int localY1 = localY0 + tpag->sourceHeight;
+        int sx0 = xscale * localX0;
+        int sy0 = yscale * localY0;
+        int sx1 = xscale * localX1;
+        int sy1 = yscale * localY1;
 
-		for (int dx = startX; endX > dx; dx += tileW) {
-			int cx = dx + (int)(originX * axScale);
-			int vx0 = cx + sx0;
-			int vx1 = cx + sx1;
-			int dw = vx1 - vx0;
+        for (int dy = startY; endY > dy; dy += tileH) {
+                int cy = dy + (int)(originY * ayScale);
+                int vy0 = cy + sy0;
+                int vy1 = cy + sy1;
+                
+                int drawY = vy0;
+                int dh = vy1 - vy0;
+                if (yscale < 0.0f) {
+                        drawY = vy1; 
+                        dh = -(vy0 - vy1); 
+                }
 
-			swrDrawSprite(renderer, vx0, vy0, dw, dh, swr->textures[pageId], sx, sy, sw, sh, color, alpha);
-		}
-	}
+                for (int dx = startX; endX > dx; dx += tileW) {
+                        int cx = dx + (int)(originX * axScale);
+                        int vx0 = cx + sx0;
+                        int vx1 = cx + sx1;
+                        
+                        int drawX = vx0;
+                        int dw = vx1 - vx0;
+                        if (xscale < 0.0f) {
+                                drawX = vx1;
+                                dw = -(vx0 - vx1); 
+                        }
+
+                        swrDrawSprite(renderer, drawX, drawY, dw, dh, swr->textures[pageId], sx, sy, sw, sh, color, alpha);
+                }
+        }
 }
 
 static void SWRenderer_flush(Renderer* renderer)
