@@ -357,20 +357,15 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
 
                 uint32_t r, g, b;
                 if (p16 == 0x0821) {
-                        r = 0;
-                        g = 0;
-                        b = 0;
+                        r = 0; g = 0; b = 0;
                 } else {
-                        // Unpack with symmetric bit-replication
                         uint32_t r5 = (p16 >> 11) & 0x1F;
                         uint32_t g6 = (p16 >> 5)  & 0x3F;
                         uint32_t b5 = p16         & 0x1F;
-
                         r = (r5 << 3) | (r5 >> 2);
                         g = (g6 << 2) | (g6 >> 4);
                         b = (b5 << 3) | (b5 >> 2);
                 }
-
                 return (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
         }
 
@@ -394,20 +389,15 @@ static inline uintpixel_t swrGetVirtualTexel(SWTexture* texture, int x, int y)
 
         uint32_t r, g, b;
         if (p16 == 0x0821) {
-                r = 0;
-                g = 0;
-                b = 0;
+                r = 0; g = 0; b = 0;
         } else {
-                // Unpack with symmetric bit-replication on-the-fly
                 uint32_t r5 = (p16 >> 11) & 0x1F;
                 uint32_t g6 = (p16 >> 5)  & 0x3F;
                 uint32_t b5 = p16         & 0x1F;
-
                 r = (r5 << 3) | (r5 >> 2);
                 g = (g6 << 2) | (g6 >> 4);
                 b = (b5 << 3) | (b5 >> 2);
         }
-
         return (uintpixel_t)((0xFF << 24) | (r << 16) | (g << 8) | b);
 }
 
