@@ -1106,13 +1106,15 @@ static void swrDrawSpriteInternal(
                         }
                 }
         }
-        else
+else
         {
                 fixedp_t ys2 = iys2;
                 for (int y = 0, ys = iys; y < dh; y++, ys += oys, ys2 += oys2)
                 {
                         uintpixel_t* dstline = &swr->fb[(dy + y) * swr->fbPitch + dx];
-                        int ty = sy + (dh == sh ? ys : (int)(ys2 >> fp_prec));
+
+                        // FIX: Force sub-pixel tracking calculation if the sprite is flipped vertically
+                        int ty = sy + ((dh == sh && !flipY) ? ys : (int)(ys2 >> fp_prec));
 
                         int sliceY = ty >> 8;
                         int slicesWide = texture->width >> 8;
@@ -1123,7 +1125,8 @@ static void swrDrawSpriteInternal(
                         fixedp_t xs2 = ixs2;
                         for (int x = 0, xs = ixs; x < dw; x++, xs += oxs, xs2 += oxs2)
                         {
-                                int tx = sx + (int)(xs2 >> fp_prec);
+                                // FIX: Force sub-pixel tracking calculation if the sprite is flipped horizontally
+                                int tx = sx + ((dw == sw && !flipX) ? xs : (int)(xs2 >> fp_prec));
                                 uintpixel_t pixel;
 
                                 if (texture->buffer == NULL && texture->width <= 256 && texture->height <= 256) {
