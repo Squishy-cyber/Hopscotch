@@ -2238,8 +2238,6 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
         DataWin* dw = swr->base.dataWin;
 
         // --- THE ISOLATED SANDBOX CANVAS ---
-        // We maintain a single, dedicated static texture pointer that belongs purely 
-        // to this function. It never touches or pollutes the data.win asset arrays!
         static SWTexture* sandboxTex = NULL;
 
         // Free the previous frame's capture safely before allocating the new one
@@ -2267,18 +2265,22 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                         continue;
                 }
 
-                uintpixel_t* srcline = &swr->fb[(iy + y) * swr->width + x];
+                // FIX: Look up the baseline row pitch address without pre-shifting the column offset
+                uintpixel_t* srcline = &swr->fb[(iy + y) * swr->width];
 
                 int ix = 0, sx = x;
                 for (; sx < 0 && ix < w; sx++, ix++)
                         dstline[ix] = 0;
 
+                // FIX: Look up using the absolute frame buffer coordinate (sx) instead of double-offsetting
                 for (; sx < swr->width && ix < w; sx++, ix++)
+                {
 #if PIXEL_SIZE == 8
-                        dstline[ix] = srcline[ix];
+                        dstline[ix] = srcline[sx];
 #else
-                        dstline[ix] = srcline[ix] | TRANSPARENT_MASK;
+                        dstline[ix] = srcline[sx] | TRANSPARENT_MASK;
 #endif
+                }
 
                 for (; ix < w; ix++)
                         dstline[ix] = 0;
@@ -2306,20 +2308,15 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                 sprite->tpagIndices = safeMalloc(sizeof(int32_t));
         }
 
-        // We use a high, dummy, out-of-the-way tpag index that won't conflict with slot 0
         sprite->tpagIndices[0] = 9999;
         sprite->maskCount = 0;
         sprite->masks = nullptr;
 
-        // Directly assign our standalone texture pointer into the renderer's tracking table
-        // under an out-of-bounds index, or override the texture page lookup mapping.
-        // To make sure the drawing routine catches it, we bind it to a safe custom index:
         int32_t customTextureSlot = swr->totalTextureCount - 1;
         if (customTextureSlot >= 0) {
                 swr->textures[customTextureSlot] = sandboxTex;
 
-                // Point our texture page item structural reference to our standalone slot
-                if (9999 < dw->tpag.count) {
+                if (9999 < (int32_t)dw->tpag.count) {
                         TexturePageItem* tpag = &dw->tpag.items[9999];
                         tpag->sourceX = 0;
                         tpag->sourceY = 0;
