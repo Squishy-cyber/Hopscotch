@@ -2229,18 +2229,13 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
 
         (void) removeback;
         (void) smooth;
-
-        // Block custom offscreen surfaces to keep Chapter 2 fully stable
-        if (surfaceID != -1) {
-                return 0;
-        }
+        (void) surfaceID; // Bypass strict ID blocking so dynamic fight effects don't break
 
         DataWin* dw = swr->base.dataWin;
 
         // --- THE ISOLATED SANDBOX CANVAS ---
         static SWTexture* sandboxTex = NULL;
 
-        // Free the previous frame's capture safely before allocating the new one
         if (sandboxTex != NULL) {
                 if (sandboxTex->buffer != NULL) {
                         free(sandboxTex->buffer);
@@ -2254,7 +2249,7 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                 return 0;
         }
 
-        // grab the pixels from the frame buffer
+        // grab the pixels safely from the frame buffer
         for (int iy = 0; iy < h; iy++)
         {
                 uintpixel_t* dstline = &sandboxTex->buffer[iy * sandboxTex->width];
@@ -2265,14 +2260,12 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                         continue;
                 }
 
-                // FIX: Look up the baseline row pitch address without pre-shifting the column offset
                 uintpixel_t* srcline = &swr->fb[(iy + y) * swr->width];
 
                 int ix = 0, sx = x;
                 for (; sx < 0 && ix < w; sx++, ix++)
                         dstline[ix] = 0;
 
-                // FIX: Look up using the absolute frame buffer coordinate (sx) instead of double-offsetting
                 for (; sx < swr->width && ix < w; sx++, ix++)
                 {
 #if PIXEL_SIZE == 8
@@ -2292,7 +2285,6 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                 recycledSpriteIndex = DataWin_allocSpriteSlot(dw, swr->originalSpriteCount);
         }
 
-        // Guard configuration bounds safely
         if (recycledSpriteIndex < 0 || recycledSpriteIndex >= (int32_t)dw->sprt.count) {
                 return 0;
         }
