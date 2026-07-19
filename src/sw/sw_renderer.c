@@ -2229,7 +2229,7 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
 
         (void) removeback;
         (void) smooth;
-        (void) surfaceID; // Bypass strict ID blocking so dynamic fight effects don't break
+        (void) surfaceID; 
 
         DataWin* dw = swr->base.dataWin;
 
@@ -2249,7 +2249,7 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                 return 0;
         }
 
-        // grab the pixels safely from the frame buffer
+        // Grab the pixels safely from the framebuffer
         for (int iy = 0; iy < h; iy++)
         {
                 uintpixel_t* dstline = &sandboxTex->buffer[iy * sandboxTex->width];
@@ -2300,22 +2300,15 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                 sprite->tpagIndices = safeMalloc(sizeof(int32_t));
         }
 
-        sprite->tpagIndices[0] = 9999;
+        // Set our sentinel value! spriteGetTexture will pick this up and bypass the tpag array entirely.
+        sprite->tpagIndices[0] = 9999; 
         sprite->maskCount = 0;
         sprite->masks = nullptr;
 
+        // Store our sandbox texture securely at the end of the textures array
         int32_t customTextureSlot = swr->totalTextureCount - 1;
         if (customTextureSlot >= 0) {
                 swr->textures[customTextureSlot] = sandboxTex;
-
-                if (9999 < (int32_t)dw->tpag.count) {
-                        TexturePageItem* tpag = &dw->tpag.items[9999];
-                        tpag->sourceX = 0;
-                        tpag->sourceY = 0;
-                        tpag->sourceWidth = (uint16_t) w;
-                        tpag->sourceHeight = (uint16_t) h;
-                        tpag->texturePageId = customTextureSlot;
-                }
         }
 
         return recycledSpriteIndex;
@@ -2401,9 +2394,17 @@ void SWRenderer_clearFrameBuffer(Renderer* renderer, uint32_t color)
 
 static uint32_t SWRenderer_spriteGetTexture(Renderer* renderer, int32_t tpagIndex)
 {
-	(void) renderer;
+        SWRenderer* swr = (SWRenderer*) renderer;
 
-	return (uint32_t) tpagIndex + 1;
+        // INTERCEPT: If it's our dynamic sandbox canvas sentinel,
+        // map it directly to our custom surface texture slot!
+        if (tpagIndex == 9999)
+        {
+                return (uint32_t)(swr->totalTextureCount - 1) + 1;
+        }
+
+        // Standard legacy engine behavior
+        return (uint32_t) tpagIndex + 1;
 }
 
 static uint32_t SWRenderer_surfaceGetTexture(Renderer* renderer, int32_t surfaceID)
