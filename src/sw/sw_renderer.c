@@ -1505,33 +1505,69 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
         SWRenderer* swr = (SWRenderer*) renderer;
         DataWin* dwin = renderer->dataWin;
 
+        int sx, sy, sw, sh, dw, dh;
+        float dx, dy;
+        SWTexture* texture = NULL;
+
+        // --- INTERCEPT FOR THE SANDBOX SURFACE ---
+        if (tpagIndex == 9999)
+        {
+                int32_t customTextureSlot = swr->totalTextureCount - 1;
+                if (customTextureSlot < 0) return;
+
+                texture = swr->textures[customTextureSlot];
+                if (!texture) return;
+
+                // For dynamic surfaces, use the sub-rectangle cut bounds explicitly
+                sx = srcOffX;
+                sy = srcOffY;
+                sw = srcW;
+                sh = srcH;
+
+                dx = x;
+                dy = y;
+                dw = swrCeiling(xscale * sw);
+                dh = swrCeiling(yscale * sh);
+
+                // Bypass frustum culling to make sure melting screen translations don't pop out early
+                if (UNLIKELY(swrMustRotate(angleDeg)))
+                {
+                        swrDrawSpriteRotated(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, pivotX * dw, pivotY * dh);
+                }
+                else
+                {
+                        swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
+        }
+                return; // Dynamic surface draw part finished safely!
+        }
+
+        // --- LEGACY PIPELINE FOR NORMAL SPRITES ---
         if (tpagIndex < 0 || (uint32_t) tpagIndex >= dwin->tpag.count) return;
 
         TexturePageItem* tpag = &dwin->tpag.items[tpagIndex];
         int16_t pageId = tpag->texturePageId;
         if (0 > pageId || swr->totalTextureCount <= (uint32_t) pageId) return;
 
-        int sx = tpag->sourceX + srcOffX;
-        int sy = tpag->sourceY + srcOffY;
-        int sw = srcW;
-        int sh = srcH;
+        sx = tpag->sourceX + srcOffX;
+        sy = tpag->sourceY + srcOffY;
+        sw = srcW;
+        sh = srcH;
 
-        float dx = x;
-        float dy = y;
-        int dw = swrCeiling(xscale * sw);
-        int dh = swrCeiling(yscale * sh);
+        dx = x;
+        dy = y;
+        dw = swrCeiling(xscale * sw);
+        dh = swrCeiling(yscale * sh);
 
         // --- SAFE VISUAL FRUSTUM CULL FOR PARTS & TILES ---
         if (renderer->runner != nullptr) {
                 GMLCamera* cam = Runner_getCameraForView(renderer->runner, 0);
                 if (cam != nullptr && cam->allocated) {
-                        float pad = 64.0f; // Padding margin to prevent edge-popping artifacts
+                        float pad = 64.0f; 
                         float camLeft = (float)cam->viewX - pad;
                         float camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
                         float camTop = (float)cam->viewY - pad;
                         float camBottom = (float)cam->viewY + (float)cam->viewHeight + pad;
 
-                        // Normalize dimensions for correct bounding box calculations (handles negative scaling)
                         float sLeft = dx;
                         float sRight = dx + (float)dw;
                         float sTop = dy;
@@ -1541,15 +1577,14 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
                         if (dh < 0) { sTop = dy + (float)dh; sBottom = dy; }
 
                         if (sRight < camLeft || sLeft > camRight || sBottom < camTop || sTop > camBottom) {
-                                return; // Safely skip offscreen texture allocations and blits!
+                                return; 
                         }
                 }
         }
 
-        // Defer texture loading/validation check UNTIL we know it is actually visible
         if (!swrEnsureTextureIsLoaded(swr, (uint32_t) pageId)) return;
 
-        SWTexture* texture = swr->textures[pageId];
+        texture = swr->textures[pageId];
 
         if (UNLIKELY(swrMustRotate(angleDeg)))
         {
