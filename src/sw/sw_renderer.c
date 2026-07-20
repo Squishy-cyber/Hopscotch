@@ -1387,12 +1387,11 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
         float dx, dy;
         SWTexture* texture = NULL;
 
-        // --- INTERCEPT FOR THE SANDBOX SURFACE ---
-        if (tpagIndex == 9999) 
+        int32_t customTextureSlot = swr->totalTextureCount - 1;
+
+        // --- INTERCEPT: Check for our direct custom texture index ---
+        if (customTextureSlot >= 0 && tpagIndex == customTextureSlot)
         {
-                int32_t customTextureSlot = swr->totalTextureCount - 1;
-                if (customTextureSlot < 0) return;
-                
                 texture = swr->textures[customTextureSlot];
                 if (!texture) return;
 
@@ -1411,9 +1410,7 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
                 dy *= yscale;
                 dx += x;
                 dy += y;
-                
-                // Bypass frustum culling for full screen surface effects (like Undyne's melting animation)
-                // to make absolutely sure they don't clip out early
+
                 if (UNLIKELY(swrMustRotate(angleDeg)))
                 {
                         float pivotX = (x - dx) * swrSgn(xscale);
@@ -1462,7 +1459,7 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
         if (renderer->runner != nullptr) {
                 GMLCamera* cam = Runner_getCameraForView(renderer->runner, 0);
                 if (cam != nullptr && cam->allocated) {
-                        float pad = 64.0f; 
+                        float pad = 64.0f;
                         float camLeft = (float)cam->viewX - pad;
                         float camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
                         float camTop = (float)cam->viewY - pad;
@@ -1472,7 +1469,7 @@ static void SWRenderer_drawSprite(Renderer* renderer, int32_t tpagIndex, float x
                         float spriteBottom = dy + (float)dh;
 
                         if (spriteRight < camLeft || dx > camRight || spriteBottom < camTop || dy > camBottom) {
-                                return; 
+                                return;
                         }
                 }
         }
@@ -1509,12 +1506,11 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
         float dx, dy;
         SWTexture* texture = NULL;
 
-        // --- INTERCEPT FOR THE SANDBOX SURFACE ---
-        if (tpagIndex == 9999)
-        {
-                int32_t customTextureSlot = swr->totalTextureCount - 1;
-                if (customTextureSlot < 0) return;
+        int32_t customTextureSlot = swr->totalTextureCount - 1;
 
+        // --- INTERCEPT: Check for our direct custom texture index ---
+        if (customTextureSlot >= 0 && tpagIndex == customTextureSlot)
+        {
                 texture = swr->textures[customTextureSlot];
                 if (!texture) return;
 
@@ -1529,7 +1525,6 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
                 dw = swrCeiling(xscale * sw);
                 dh = swrCeiling(yscale * sh);
 
-                // Bypass frustum culling to make sure melting screen translations don't pop out early
                 if (UNLIKELY(swrMustRotate(angleDeg)))
                 {
                         swrDrawSpriteRotated(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha, angleDeg, pivotX * dw, pivotY * dh);
@@ -1537,7 +1532,7 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
                 else
                 {
                         swrDrawSprite(renderer, dx, dy, dw, dh, texture, sx, sy, sw, sh, color, alpha);
-        }
+                }
                 return; // Dynamic surface draw part finished safely!
         }
 
@@ -1562,7 +1557,7 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
         if (renderer->runner != nullptr) {
                 GMLCamera* cam = Runner_getCameraForView(renderer->runner, 0);
                 if (cam != nullptr && cam->allocated) {
-                        float pad = 64.0f; 
+                        float pad = 64.0f;
                         float camLeft = (float)cam->viewX - pad;
                         float camRight = (float)cam->viewX + (float)cam->viewWidth + pad;
                         float camTop = (float)cam->viewY - pad;
@@ -1577,7 +1572,7 @@ static void SWRenderer_drawSpritePart(Renderer* renderer, int32_t tpagIndex,
                         if (dh < 0) { sTop = dy + (float)dh; sBottom = dy; }
 
                         if (sRight < camLeft || sLeft > camRight || sBottom < camTop || sTop > camBottom) {
-                                return; 
+                                return;
                         }
                 }
         }
@@ -2309,8 +2304,8 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
         (void) removeback;
         (void) smooth;
         (void) surfaceID;
-
-        DataWin* dw = swr->base.dataWin;
+        (void) xorig;
+        (void) yorig;
 
         // --- THE ISOLATED SANDBOX CANVAS ---
         static SWTexture* sandboxTex = NULL;
@@ -2358,42 +2353,16 @@ static int32_t SWRenderer_createSpriteFromSurface(Renderer* renderer, int32_t su
                         dstline[ix] = 0;
         }
 
-        // Register/allocate our static recycled sprite slot
-        static int32_t recycledSpriteIndex = -1;
-        if (recycledSpriteIndex == -1) {
-                recycledSpriteIndex = DataWin_allocSpriteSlot(dw, swr->originalSpriteCount);
-        }
-
-        if (recycledSpriteIndex < 0 || recycledSpriteIndex >= (int32_t)dw->sprt.count) {
-                return 0;
-        }
-
-        Sprite* sprite = &dw->sprt.sprites[recycledSpriteIndex];
-
-        // FIX: Keep texture sizes unscaled here because SWRenderer_drawSprite
-        // applies xscale/yscale factors when rendering!
-        sprite->width = (uint32_t) w;
-        sprite->height = (uint32_t) h;
-        sprite->originX = xorig;
-        sprite->originY = yorig;
-        sprite->textureCount = 1;
-
-        if (sprite->tpagIndices == NULL) {
-                sprite->tpagIndices = safeMalloc(sizeof(int32_t));
-        }
-
-        // Assign the sentinel index value! SWRenderer_drawSprite picks this up
-        sprite->tpagIndices[0] = 9999;
-        sprite->maskCount = 0;
-        sprite->masks = nullptr;
-
-        // Safely store the sandbox canvas texture pointer into the last slots of the renderer tracking table
+        // Secure the canvas buffer into our renderer array slot
         int32_t customTextureSlot = swr->totalTextureCount - 1;
         if (customTextureSlot >= 0) {
                 swr->textures[customTextureSlot] = sandboxTex;
         }
 
-        return recycledSpriteIndex;
+        // Look back at: return (uint32_t) tpagIndex + 1;
+        // If the engine treats this return value as a pseudo-tpagIndex, we pass our
+        // custom index slot value so the pipeline targets the last texture instead of 0!
+        return customTextureSlot;
 }
 
 static void SWRenderer_deleteSprite(Renderer* renderer, int32_t spriteIndex)
