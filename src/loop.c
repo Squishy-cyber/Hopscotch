@@ -492,15 +492,12 @@ int loop(CommandLineArgs args, const char *argv0) {
         options.parseFont = true;
         options.parseTmln = true;
         options.parseObjt = true;
-        options.parseRoom = true;
+	options.parseRoom = true;
         options.parseTpag = true;
         options.parseCode = true;
         options.parseVari = true;
         options.parseFunc = true;
         options.parseStrg = true;
-<<<<<<< HEAD:src/desktop/main.c
-        options.parseTxtr = false;
-=======
         options.parseTxtr = true;
 #ifdef PLATFORM_VITA
         do {
@@ -527,21 +524,17 @@ int loop(CommandLineArgs args, const char *argv0) {
             options.parseTxtr = false;
         } while(0);
 #endif
->>>>>>> 79bfdca7f24e3071d1028c45313c33d5511d644e:src/loop.c
 #if defined(USE_MINIAUDIO) || defined(USE_OPENAL)
         if (!args.headless)
             options.parseAudo = false;
 #endif
         options.skipLoadingPreciseMasksForNonPreciseSprites = true;
         options.loadType = args.loadType;
-<<<<<<< HEAD:src/desktop/main.c
         options.lazyLoadRooms = true;
         options.lazyLoadTextures = false;
-=======
         options.lazyLoadRooms = args.lazyRooms;
         options.lazyLoadTextures = args.lazyTextures;
         options.lazyLoadAudio = args.lazyAudio;
->>>>>>> 79bfdca7f24e3071d1028c45313c33d5511d644e:src/loop.c
         options.eagerlyLoadedRooms = args.eagerRooms;
         DataWin* dataWin = DataWin_parse(currentDataWinPath, options);
 
