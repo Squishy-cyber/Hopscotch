@@ -22,6 +22,11 @@ RunnerKeyboardState* RunnerKeyboard_create(void) {
 }
 
 static int32_t mapKey(RunnerKeyboardState* kb, int32_t gmlKeyCode) {
+    // --- LEAPSTER GS HARDWARE OVERRIDE LAYER ---
+    if (gmlKeyCode == 32) return 'Z';          // Physical A (Space) -> Force Engine Z
+    if (gmlKeyCode == 17) return 'X';          // Physical B (LCtrl) -> Force Engine X
+    if (gmlKeyCode == 'Z') return 'C';          // Physical Home (Z)  -> Force Engine C
+
     if (!isValidKey(gmlKeyCode)) return gmlKeyCode;
     return kb->keyMap[gmlKeyCode];
 }

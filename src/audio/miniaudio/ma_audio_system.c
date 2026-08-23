@@ -267,6 +267,31 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
         bool inAudo = !isRegular || isEmbedded || isCompressed;
 
         if (inAudo) {
+            // --- RAM OPTIMIZATION: .wav / .ogg prioritized on-demand disk streaming for AUDO bypass ---
+            char lazyAudioPath[512];
+            bool fileFound = false;
+
+            // Prioritize .wav files using the original asset string name
+            snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/roms/butterscotch/Audio_Slices/%s.wav", sound->name);
+            if (access(lazyAudioPath, F_OK) == 0) {
+                fileFound = true;
+            } else {
+                // Fall back to .ogg version if it exists
+                snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/roms/butterscotch/Audio_Slices/%s.ogg", sound->name);
+                if (access(lazyAudioPath, F_OK) == 0) {
+                    fileFound = true;
+                }
+            }
+
+            if (fileFound) {
+                result = ma_sound_init_from_file(&ma->engine, lazyAudioPath, MA_SOUND_FLAG_ASYNC, &ma->listenerGroups[0], nullptr, &slot->maSound);
+                if (result == MA_SUCCESS) {
+                    slot->ownsDecoder = false;
+                    goto sound_initialized_bypass;
+                }
+            }
+            // --- END RAM OPTIMIZATION ---
+
             // Embedded audio: decode from AUDO chunk memory
             if (0 > sound->audioFile || (uint32_t) sound->audioFile >= ma->base.audioGroups[sound->audioGroup]->audo.count) {
                 logWarn("Audio: Invalid audio file index %d for sound '%s'\n", sound->audioFile, sound->name);
@@ -283,6 +308,8 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
                 logWarn("Audio: Failed to init decoder for '%s' (error %d)\n", sound->name, result);
                 return -1;
             }
+            
+            sound_initialized_bypass:;
             slot->ownsDecoder = true;
 
             result = ma_sound_init_from_data_source(&ma->engine, &slot->decoder, 0, &ma->listenerGroups[0], &slot->maSound);
@@ -765,7 +792,7 @@ static void maGroupLoad(AudioSystem* audio, int32_t groupIndex) {
         }
 
         DataWinParserOptions options = {0};
-        options.parseAudo = true;
+        options.parseAudo = false;
         options.lazyLoadAudio = audio->dw->lazyLoadAudio;
         if (audio->dw->mappedFile)
             options.loadType = DATAWINLOADTYPE_MAP_FILE;
