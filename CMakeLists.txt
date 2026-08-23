@@ -41,10 +41,8 @@ else()
     endif()
 endif()
 
-<<<<<<< HEAD
 set(PLATFORM "desktop" CACHE STRING "Platform backend")
 set(DESKTOP_BACKEND "sdl1" CACHE STRING "Desktop platform backend")
-=======
 if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
     if(MSVC)
         # equivalent to -fomit-frame-pointer
@@ -63,7 +61,6 @@ endif()
 
 set(PLATFORM "cli" CACHE STRING "Platform backend")
 set(BACKEND "" CACHE STRING "Desktop platform backend")
->>>>>>> 79bfdca7f24e3071d1028c45313c33d5511d644e
 set(AUDIO_BACKEND "" CACHE STRING "Audio backend")
 
 if(PLATFORM STREQUAL "cli" AND BACKEND STREQUAL "")
@@ -315,7 +312,6 @@ if(PLATFORM STREQUAL "cli" OR PLATFORM STREQUAL "vita")
         add_compile_definitions(ENABLE_VM_STUB_LOGS)
     endif()
 
-<<<<<<< HEAD
     # GLAD
     if(ENABLE_LEGACY_GL OR ENABLE_MODERN_GL OR DESKTOP_BACKEND STREQUAL "glfw3" OR DESKTOP_BACKEND STREQUAL "glfw2")
         add_library(glad STATIC vendor/glad/src/glad.c)
@@ -327,7 +323,6 @@ if(PLATFORM STREQUAL "cli" OR PLATFORM STREQUAL "vita")
     target_include_directories(butterscotch PUBLIC vendor/stb/image)
 
     set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} bzip2 stb_ds sha1 stb_vorbis)
-=======
     # stb_image
     target_include_directories(butterscotch PUBLIC vendor/stb/image)
 
@@ -339,7 +334,6 @@ if(PLATFORM STREQUAL "cli" OR PLATFORM STREQUAL "vita")
         target_compile_options(glad PRIVATE -Wno-unused-but-set-variable)
         set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} glad)
     endif()
->>>>>>> 79bfdca7f24e3071d1028c45313c33d5511d644e
     if(NOT MSVC)
         set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} m)
     endif()
