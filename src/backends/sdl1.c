@@ -6,6 +6,11 @@
 
 #include <SDL/SDL.h>
 
+// --- Added for gl4es / EGL hardware support ---
+#include <EGL/egl.h>
+#include <GL/gl.h>
+#include <dlfcn.h>
+
 #include "common.h"
 #include "input_recording.h"
 #include "platformdefs.h"
@@ -289,6 +294,39 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
         }
     }
 
+    // --- EGL & gl4es Hardware Initialization ---
+    fprintf(stderr, "=== [BUTTERSCOTCH] Initializing EGL/gl4es Context ===\n");
+    dlopen("libvr5.so", RTLD_LAZY | RTLD_GLOBAL);
+    void *gl_handle = dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL);
+    if (!gl_handle) {
+        logWarn("[BUTTERSCOTCH] WARNING: dlopen('libGL.so.1') failed: %s\n", dlerror());
+    }
+
+    EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if (display != EGL_NO_DISPLAY) {
+        EGLint major, minor;
+        if (eglInitialize(display, &major, &minor)) {
+            const EGLint attribs[] = {
+                EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+                EGL_RENDERABLE_TYPE, EGL_OPENGL_ES1_BIT,
+                EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 8,
+                EGL_DEPTH_SIZE, 16, EGL_NONE
+            };
+            EGLConfig config;
+            EGLint numConfigs;
+            if (eglChooseConfig(display, attribs, &config, 1, &numConfigs) && numConfigs > 0) {
+                EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, NULL);
+                EGLSurface surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)NULL, NULL);
+                if (context != EGL_NO_CONTEXT && surface != EGL_NO_SURFACE) {
+                    eglMakeCurrent(display, surface, surface, context);
+                    fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: EGL Context and Surface made current!\n");
+                } else {
+                    logError("[BUTTERSCOTCH] ERROR: Failed to create EGL context or window surface.\n");
+                }
+            }
+        }
+    }
+    // ------------------------------------------
     SDL_WM_SetCaption(title, NULL);
 
     SDL_EnableKeyRepeat(0, 0);
@@ -551,9 +589,27 @@ bool platformHandleEvents(void) {
                 }
                 // During playback, suppress real keyboard input
                 if (InputRecording_isPlaybackActive(globalInputRecording)) break;
-                RunnerKeyboard_onKeyDown(g_runner->keyboard, SDLKeyToGml(e.key.keysym.sym));
+
+                int32_t finalGmlKey = SDLKeyToGml(e.key.keysym.sym);
+                unsigned int forceChar = 0;
+
+                // Re-shuffled to correct the cross-wiring
+                if (e.key.keysym.sym == 98 || e.key.keysym.sym == 'b') {          // Physical A button
+                    finalGmlKey = 'Z'; // Force Action (Z)
+                    forceChar = 'z';
+                } else if (e.key.keysym.sym == 97 || e.key.keysym.sym == 'a') {  // Physical B button
+                    finalGmlKey = 'X'; // Force Back (X)
+                    forceChar = 'x';
+                } else if (e.key.keysym.sym == 104 || e.key.keysym.sym == 'h') { // Physical Home button
+                    finalGmlKey = 'C'; // Force Menu (C)
+                    forceChar = 'c';
+                }
+
+                RunnerKeyboard_onKeyDown(g_runner->keyboard, finalGmlKey);
                 if (e.key.keysym.unicode != 0)
                     RunnerKeyboard_onCharacter(g_runner->keyboard, e.key.keysym.unicode);
+                else if (forceChar != 0)
+                    RunnerKeyboard_onCharacter(g_runner->keyboard, forceChar);
                 break;
             case SDL_KEYUP:
                 // During playback, suppress real keyboard input
