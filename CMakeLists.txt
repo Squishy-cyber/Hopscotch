@@ -208,9 +208,12 @@ add_library(sha1 STATIC vendor/sha1/sha1.c)
 target_include_directories(sha1 SYSTEM PUBLIC vendor/sha1)
 target_compile_options(sha1 PRIVATE -w)
 
-# GL4ES EGL Headers
-add_library(gl4es_egl STATIC /home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/src/egl/egl.c)
-target_include_directories(gl4es_egl PUBLIC /home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include)
+# Import prebuilt EGL shared library from Buildroot staging/target output
+add_library(EGL SHARED IMPORTED)
+set_target_properties(EGL PROPERTIES
+    IMPORTED_LOCATION "/home/squishy/src/leapfrog/retroleap/output/target/usr/lib/libEGL.so"
+    INTERFACE_INCLUDE_DIRECTORIES "/home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include"
+)
 
 # Base64 implementation
 target_sources(butterscotch PRIVATE vendor/base64/base64.c)
