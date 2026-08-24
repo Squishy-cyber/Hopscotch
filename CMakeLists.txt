@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+target_sourcescmake_minimum_required(VERSION 3.16)
 
 set(BACKEND "sdl1")
 
@@ -377,6 +377,13 @@ if(PLATFORM STREQUAL "cli" OR PLATFORM STREQUAL "vita" OR PLATFORM STREQUAL "des
 
         find_package(SDL REQUIRED)
         target_include_directories(butterscotch PUBLIC ${SDL_INCLUDE_DIR})
+
+	# Add the backend source file and any image decoder source that uses stb
+	target_sources(butterscotch PRIVATE
+	    src/backends/sdl1.c
+	    src/image/image_decoder.c
+    	)
+
         set(BACKEND_LIBRARIES ${SDL_LIBRARY})
     elseif(BACKEND STREQUAL "sdl2")
         add_compile_definitions(USE_SDL2)
