@@ -4,7 +4,13 @@
 #include <windows.h>
 #endif
 
-// 1. Include system & project headers FIRST
+// Include stb_vorbis BEFORE miniaudio so that STB_VORBIS_INCLUDE_STB_VORBIS_H is defined,
+// which enables miniaudio's built-in OGG Vorbis decoding support.
+#include "stb_vorbis.c"
+
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
+
 #include "ma_audio_system.h"
 #include "data_win.h"
 #include "utils.h"
@@ -14,32 +20,6 @@
 #include <string.h>
 #include "stb_ds.h"
 
-// 2. Include stb_vorbis BEFORE miniaudio implementation
-#include "stb_vorbis.c"
-
-// 3. Define implementation flag AFTER headers are included
-#define MINIAUDIO_IMPLEMENTATION
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#endif
-#include "miniaudio.h"
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
-<<<<<<< HEAD
-=======
-#include "ma_audio_system.h"
-#include "data_win.h"
-#include "utils.h"
-
-#include "stdio_compat.h"
-#include <stdlib.h>
-#include "string_compat.h"
-#include "stb_ds.h"
-
->>>>>>> 79bfdca7f24e3071d1028c45313c33d5511d644e
 // ===[ Helpers ]===
 
 static SoundInstance* findFreeSlot(MaAudioSystem* ma) {
@@ -72,19 +52,11 @@ static SoundInstance* findFreeSlot(MaAudioSystem* ma) {
     return best;
 }
 
-static bool isValidSoundInstanceId(int32_t instanceId) {
-    return AUDIO_STREAM_INDEX_BASE > instanceId && instanceId >= SOUND_INSTANCE_ID_BASE;
-}
-
 static SoundInstance* findInstanceById(MaAudioSystem* ma, int32_t instanceId) {
     int32_t slotIndex = instanceId - SOUND_INSTANCE_ID_BASE;
-    if (0 > slotIndex || slotIndex >= MAX_SOUND_INSTANCES)
-        return nullptr;
-
+    if (0 > slotIndex || slotIndex >= MAX_SOUND_INSTANCES) return nullptr;
     SoundInstance* inst = &ma->instances[slotIndex];
-    if (!inst->active || inst->instanceId != instanceId)
-        return nullptr;
-
+    if (!inst->active || inst->instanceId != instanceId) return nullptr;
     return inst;
 }
 
@@ -113,44 +85,21 @@ static void maInit(AudioSystem* audio, DataWin* dataWin, FileSystem* fileSystem)
     arrput(ma->base.audioGroups, dataWin);
     ma->fileSystem = fileSystem;
 
-    ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
-    deviceConfig.playback.format = ma_format_s16; // Fix: 16-bit PCM
-    deviceConfig.playback.channels = 2;
-    deviceConfig.dataCallback = ma_engine_data_callback_internal;
-    deviceConfig.pUserData    = &ma->engine;
-    ma_result deviceResult = ma_device_init(NULL, &deviceConfig, &ma->device);
-    if (deviceResult != MA_SUCCESS) {
-        logError("Audio: Failed to initialize playback device (error %d)\n", deviceResult);
-        return;
-    }
     ma_engine_config config = ma_engine_config_init();
-    config.pDevice = &ma->device;
-    
     ma_result result = ma_engine_init(&config, &ma->engine);
     if (result != MA_SUCCESS) {
-        logError("Audio: Failed to initialize miniaudio engine (error %d)\n", result);
-        ma_device_uninit(&ma->device);
+        fprintf(stderr, "Audio: Failed to initialize miniaudio engine (error %d)\n", result);
         return;
     }
 
     memset(ma->instances, 0, sizeof(ma->instances));
     ma->nextInstanceCounter = 0;
 
-    repeat(MAX_LISTENERS, i) {
-        ma_sound_group_init(&ma->engine, 0, NULL, &ma->listenerGroups[i]);
-        ma_sound_group_set_volume(&ma->listenerGroups[i], 1.0f);
-        ma->listenerGains[i] = 1.0f;
-    }
-
-    logInfo("Audio: miniaudio engine initialized\n");
+    fprintf(stderr, "Audio: miniaudio engine initialized\n");
 }
 
 static void maDestroy(AudioSystem* audio) {
     MaAudioSystem* ma = (MaAudioSystem*) audio;
-
-    repeat(MAX_LISTENERS, i) {
-        ma_sound_group_uninit(&ma->listenerGroups[i]);
-    }
 
     // Uninit all active sound instances
     repeat(MAX_SOUND_INSTANCES, i) {
@@ -178,7 +127,6 @@ static void maDestroy(AudioSystem* audio) {
     }
     arrfree(ma->base.audioGroups);
 
-    ma_device_uninit(&ma->device);
     ma_engine_uninit(&ma->engine);
     free(ma);
 }
@@ -221,23 +169,18 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
     bool isStream = (soundIndex >= AUDIO_STREAM_INDEX_BASE);
     Sound* sound = nullptr;
     char* streamPath = nullptr;
-    float streamPitch = 1.0f;
-    float streamGain = 1.0f;
 
     if (isStream) {
         int32_t streamSlot = soundIndex - AUDIO_STREAM_INDEX_BASE;
         if (0 > streamSlot || streamSlot >= MAX_AUDIO_STREAMS || !ma->streams[streamSlot].active) {
-            logWarn("Audio: Invalid stream index %d\n", soundIndex);
+            fprintf(stderr, "Audio: Invalid stream index %d\n", soundIndex);
             return -1;
         }
-        AudioStreamEntry* stream = &ma->streams[streamSlot];
-        streamPath = stream->filePath;
-        streamPitch = stream->initialPitch;
-        streamGain = stream->initialGain;
+        streamPath = ma->streams[streamSlot].filePath;
     } else {
         DataWin* dw = ma->base.audioGroups[0]; // Audio Group 0 should always be data.win
         if (0 > soundIndex || (uint32_t) soundIndex >= dw->sond.count) {
-            logWarn("Audio: Invalid sound index %d\n", soundIndex);
+            fprintf(stderr, "Audio: Invalid sound index %d\n", soundIndex);
             return -1;
         }
         sound = &dw->sond.sounds[soundIndex];
@@ -245,7 +188,7 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
 
     SoundInstance* slot = findFreeSlot(ma);
     if (slot == nullptr) {
-        logWarn("Audio: No free sound slots for sound %d\n", soundIndex);
+        fprintf(stderr, "Audio: No free sound slots for sound %d\n", soundIndex);
         return -1;
     }
 
@@ -254,9 +197,9 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
 
     if (isStream) {
         // Stream audio: load from file path stored in stream entry
-        result = ma_sound_init_from_file(&ma->engine, streamPath, MA_SOUND_FLAG_ASYNC, &ma->listenerGroups[0], nullptr, &slot->maSound);
+        result = ma_sound_init_from_file(&ma->engine, streamPath, MA_SOUND_FLAG_ASYNC, nullptr, nullptr, &slot->maSound);
         if (result != MA_SUCCESS) {
-            logWarn("Audio: Failed to load stream file '%s' (error %d)\n", streamPath, result);
+            fprintf(stderr, "Audio: Failed to load stream file '%s' (error %d)\n", streamPath, result);
             return -1;
         }
         slot->ownsDecoder = false;
@@ -267,54 +210,25 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
         bool inAudo = !isRegular || isEmbedded || isCompressed;
 
         if (inAudo) {
-            // --- RAM OPTIMIZATION: .wav / .ogg prioritized on-demand disk streaming for AUDO bypass ---
-            char lazyAudioPath[512];
-            bool fileFound = false;
-
-            // Prioritize .wav files using the original asset string name
-            snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/roms/butterscotch/Audio_Slices/%s.wav", sound->name);
-            if (access(lazyAudioPath, F_OK) == 0) {
-                fileFound = true;
-            } else {
-                // Fall back to .ogg version if it exists
-                snprintf(lazyAudioPath, sizeof(lazyAudioPath), "/roms/butterscotch/Audio_Slices/%s.ogg", sound->name);
-                if (access(lazyAudioPath, F_OK) == 0) {
-                    fileFound = true;
-                }
-            }
-
-            if (fileFound) {
-                result = ma_sound_init_from_file(&ma->engine, lazyAudioPath, MA_SOUND_FLAG_ASYNC, &ma->listenerGroups[0], nullptr, &slot->maSound);
-                if (result == MA_SUCCESS) {
-                    slot->ownsDecoder = false;
-                    goto sound_initialized_bypass;
-                }
-            }
-            // --- END RAM OPTIMIZATION ---
-
             // Embedded audio: decode from AUDO chunk memory
             if (0 > sound->audioFile || (uint32_t) sound->audioFile >= ma->base.audioGroups[sound->audioGroup]->audo.count) {
-                logWarn("Audio: Invalid audio file index %d for sound '%s'\n", sound->audioFile, sound->name);
+                fprintf(stderr, "Audio: Invalid audio file index %d for sound '%s'\n", sound->audioFile, sound->name);
                 return -1;
             }
 
-            DataWin* audioGroup = ma->base.audioGroups[sound->audioGroup];
-            DataWin_loadAudoIfNeeded(audioGroup, (uint32_t)sound->audioFile);
-            AudioEntry* entry = &audioGroup->audo.entries[sound->audioFile];
+            AudioEntry* entry = &ma->base.audioGroups[sound->audioGroup]->audo.entries[sound->audioFile];
 
             ma_decoder_config decoderConfig = ma_decoder_config_init_default();
             result = ma_decoder_init_memory(entry->data, entry->dataSize, &decoderConfig, &slot->decoder);
             if (result != MA_SUCCESS) {
-                logWarn("Audio: Failed to init decoder for '%s' (error %d)\n", sound->name, result);
+                fprintf(stderr, "Audio: Failed to init decoder for '%s' (error %d)\n", sound->name, result);
                 return -1;
             }
-            
-            sound_initialized_bypass:;
             slot->ownsDecoder = true;
 
-            result = ma_sound_init_from_data_source(&ma->engine, &slot->decoder, 0, &ma->listenerGroups[0], &slot->maSound);
+            result = ma_sound_init_from_data_source(&ma->engine, &slot->decoder, 0, nullptr, &slot->maSound);
             if (result != MA_SUCCESS) {
-                logWarn("Audio: Failed to init sound from decoder for '%s' (error %d)\n", sound->name, result);
+                fprintf(stderr, "Audio: Failed to init sound from decoder for '%s' (error %d)\n", sound->name, result);
                 ma_decoder_uninit(&slot->decoder);
                 return -1;
             }
@@ -322,13 +236,13 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
             // External audio: load from file
             char* path = resolveExternalPath(ma, sound);
             if (path == nullptr) {
-                logWarn("Audio: Could not resolve path for sound '%s'\n", sound->name);
+                fprintf(stderr, "Audio: Could not resolve path for sound '%s'\n", sound->name);
                 return -1;
             }
 
-            result = ma_sound_init_from_file(&ma->engine, path, MA_SOUND_FLAG_ASYNC, &ma->listenerGroups[0], nullptr, &slot->maSound);
+            result = ma_sound_init_from_file(&ma->engine, path, MA_SOUND_FLAG_ASYNC, nullptr, nullptr, &slot->maSound);
             if (result != MA_SUCCESS) {
-                logWarn("Audio: Failed to load file for '%s' at '%s' (error %d)\n", sound->name, path, result);
+                fprintf(stderr, "Audio: Failed to load file for '%s' at '%s' (error %d)\n", sound->name, path, result);
                 free(path);
                 return -1;
             }
@@ -338,8 +252,8 @@ static int32_t maPlaySound(AudioSystem* audio, int32_t soundIndex, int32_t prior
     }
 
     // Apply properties
-    float volume = isStream ? streamGain : sound->volume;
-    float pitch = isStream ? streamPitch : sound->pitch;
+    float volume = isStream ? 1.0f : sound->volume;
+    float pitch = isStream ? 1.0f : sound->pitch;
     ma_sound_set_volume(&slot->maSound, volume);
     if (pitch != 1.0f) {
         ma_sound_set_pitch(&slot->maSound, pitch);
@@ -500,19 +414,7 @@ static void maResume(AudioSystem* audio) {
 static void maSetSoundGain(AudioSystem* audio, int32_t soundOrInstance, float gain, uint32_t timeMs) {
     MaAudioSystem* ma = (MaAudioSystem*) audio;
 
-    if (soundOrInstance >= AUDIO_STREAM_INDEX_BASE) {
-        int32_t streamSlot = soundOrInstance - AUDIO_STREAM_INDEX_BASE;
-
-        AudioStreamEntry* stream = &ma->streams[streamSlot];
-
-        if (stream != nullptr) {
-            stream->initialGain = gain;
-        }
-
-        // We want it to "fallthrough" to the check below so that any playing instances are updated
-    }
-
-    if (isValidSoundInstanceId(soundOrInstance)) {
+    if (soundOrInstance >= SOUND_INSTANCE_ID_BASE) {
         SoundInstance* inst = findInstanceById(ma, soundOrInstance);
         if (inst != nullptr) {
             if (timeMs == 0) {
@@ -528,27 +430,19 @@ static void maSetSoundGain(AudioSystem* audio, int32_t soundOrInstance, float ga
             }
         }
     } else {
-        // Before GameMaker 2024.11+, you could NOT change the audio of a streamed OGG file because it went through a path that did NOT support
-        // setting the gain of the audio
-        //
-        // Here's a fun fact for you: https://x.com/MrPowerGamerBR/status/2066291262970356037
-        //
-        // Thanks YoYo!!!
-        if (AUDIO_STREAM_INDEX_BASE > soundOrInstance || DataWin_isVersionAtLeast(audio->dw, 2024, 11, 0, 0)) {
-            repeat(MAX_SOUND_INSTANCES, i) {
-                SoundInstance* inst = &ma->instances[i];
-                if (inst->active && inst->soundIndex == soundOrInstance) {
-                    if (timeMs == 0) {
-                        inst->currentGain = gain;
-                        inst->targetGain = gain;
-                        inst->fadeTimeRemaining = 0.0f;
-                        ma_sound_set_volume(&inst->maSound, gain);
-                    } else {
-                        inst->startGain = inst->currentGain;
-                        inst->targetGain = gain;
-                        inst->fadeTotalTime = (float) timeMs / 1000.0f;
-                        inst->fadeTimeRemaining = inst->fadeTotalTime;
-                    }
+        repeat(MAX_SOUND_INSTANCES, i) {
+            SoundInstance* inst = &ma->instances[i];
+            if (inst->active && inst->soundIndex == soundOrInstance) {
+                if (timeMs == 0) {
+                    inst->currentGain = gain;
+                    inst->targetGain = gain;
+                    inst->fadeTimeRemaining = 0.0f;
+                    ma_sound_set_volume(&inst->maSound, gain);
+                } else {
+                    inst->startGain = inst->currentGain;
+                    inst->targetGain = gain;
+                    inst->fadeTotalTime = (float) timeMs / 1000.0f;
+                    inst->fadeTimeRemaining = inst->fadeTotalTime;
                 }
             }
         }
@@ -558,19 +452,7 @@ static void maSetSoundGain(AudioSystem* audio, int32_t soundOrInstance, float ga
 static float maGetSoundGain(AudioSystem* audio, int32_t soundOrInstance) {
     MaAudioSystem* ma = (MaAudioSystem*) audio;
 
-    if (soundOrInstance >= AUDIO_STREAM_INDEX_BASE) {
-        int32_t streamSlot = soundOrInstance - AUDIO_STREAM_INDEX_BASE;
-
-        AudioStreamEntry* stream = &ma->streams[streamSlot];
-
-        if (stream != nullptr) {
-            return stream->initialGain;
-        }
-
-        // We want it to "fallthrough" to the check below so that any playing instances are retrieved
-    }
-
-    if (isValidSoundInstanceId(soundOrInstance)) {
+    if (soundOrInstance >= SOUND_INSTANCE_ID_BASE) {
         SoundInstance* inst = findInstanceById(ma, soundOrInstance);
         if (inst != nullptr) return inst->currentGain;
     } else {
@@ -587,19 +469,7 @@ static float maGetSoundGain(AudioSystem* audio, int32_t soundOrInstance) {
 static void maSetSoundPitch(AudioSystem* audio, int32_t soundOrInstance, float pitch) {
     MaAudioSystem* ma = (MaAudioSystem*) audio;
 
-    if (soundOrInstance >= AUDIO_STREAM_INDEX_BASE) {
-        int32_t streamSlot = soundOrInstance - AUDIO_STREAM_INDEX_BASE;
-
-        AudioStreamEntry* stream = &ma->streams[streamSlot];
-
-        if (stream != nullptr) {
-            stream->initialPitch = pitch;
-        }
-
-        // We want it to "fallthrough" to the check below so that any playing instances are updated
-    }
-
-    if (isValidSoundInstanceId(soundOrInstance)) {
+    if (soundOrInstance >= SOUND_INSTANCE_ID_BASE) {
         SoundInstance* inst = findInstanceById(ma, soundOrInstance);
         if (inst != nullptr) {
             ma_sound_set_pitch(&inst->maSound, pitch);
@@ -617,19 +487,7 @@ static void maSetSoundPitch(AudioSystem* audio, int32_t soundOrInstance, float p
 static float maGetSoundPitch(AudioSystem* audio, int32_t soundOrInstance) {
     MaAudioSystem* ma = (MaAudioSystem*) audio;
 
-    if (soundOrInstance >= AUDIO_STREAM_INDEX_BASE) {
-        int32_t streamSlot = soundOrInstance - AUDIO_STREAM_INDEX_BASE;
-
-        AudioStreamEntry* stream = &ma->streams[streamSlot];
-
-        if (stream != nullptr) {
-            return stream->initialPitch;
-        }
-
-        // We want it to "fallthrough" to the check below so that any playing instances are retrieved
-    }
-
-    if (isValidSoundInstanceId(soundOrInstance)) {
+    if (soundOrInstance >= SOUND_INSTANCE_ID_BASE) {
         SoundInstance* inst = findInstanceById(ma, soundOrInstance);
         if (inst != nullptr) return ma_sound_get_pitch(&inst->maSound);
     } else {
@@ -725,9 +583,7 @@ static float maGetSoundLength(AudioSystem* audio, int32_t soundOrInstance) {
     ma_result decResult;
     if (inAudo) {
         if (0 > sound->audioFile || (uint32_t) sound->audioFile >= ma->base.audioGroups[sound->audioGroup]->audo.count) return 0.0f;
-        DataWin* audioGroup = ma->base.audioGroups[sound->audioGroup];
-        DataWin_loadAudoIfNeeded(audioGroup, (uint32_t)sound->audioFile);
-        AudioEntry* entry = &audioGroup->audo.entries[sound->audioFile];
+        AudioEntry* entry = &ma->base.audioGroups[sound->audioGroup]->audo.entries[sound->audioFile];
         ma_decoder_config decoderConfig = ma_decoder_config_init_default();
         decResult = ma_decoder_init_memory(entry->data, entry->dataSize, &decoderConfig, &decoder);
     } else {
@@ -754,53 +610,27 @@ static void maSetMasterGain(AudioSystem* audio, float gain) {
     ma_engine_set_volume(&ma->engine, gain);
 }
 
-static void maSetMasterGainForListener(AudioSystem* audio, float gain, int32_t id) {
-    MaAudioSystem* ma = (MaAudioSystem*) audio;
-    if (id < 0 || id >= MAX_LISTENERS) return;
-    ma->listenerGains[id] = gain;
-    ma_sound_group_set_volume(&ma->listenerGroups[id], gain);
-}
-
 static void maSetChannelCount(MAYBE_UNUSED AudioSystem* audio, MAYBE_UNUSED int32_t count) {
     // miniaudio handles channel management internally, this is a no-op
 }
 
 static void maGroupLoad(AudioSystem* audio, int32_t groupIndex) {
-    if (groupIndex > 0 && audio->dw->agrp.count > (uint32_t) groupIndex) {
-        AudioGroup* audioGroupEntry = &audio->dw->agrp.audioGroups[groupIndex];
-
-        char* buf;
-        if (audioGroupEntry->path == nullptr) {
-            int sz = snprintf(nullptr, 0, "audiogroup%d.dat", groupIndex);
-            buf = (char *)safeMalloc(sz + 1);
-            snprintf(buf, sz + 1, "audiogroup%d.dat", groupIndex);
-        } else {
-            size_t length = strlen(audioGroupEntry->path);
-            buf = (char *)safeMalloc(length + 1);
-            memcpy(buf, audioGroupEntry->path, length);
-            buf[length] = '\0';
-        }
+    if (groupIndex > 0) {
+        int sz = snprintf(nullptr, 0, "audiogroup%d.dat", groupIndex);
+        char buf[sz + 1];
+        snprintf(buf, sizeof(buf), "audiogroup%d.dat", groupIndex);
 
         // The original runner does not care if the file doesn't exist (this may happen if someone uses "audio_group_load" on a non-existent group)
         FileSystem* fileSystem = ((MaAudioSystem*)audio)->fileSystem;
         if (!fileSystem->vtable->fileExists(fileSystem, buf)) {
-            logWarn("Audio: Wanted to load Audio Group %d, but Audio Group %d does not exist in the file system!\n", groupIndex, groupIndex);
-            free(buf);
-            DataWin* dw = (DataWin *)safeCalloc(1, sizeof(DataWin));
-            arrput(audio->audioGroups, dw);
+            fprintf(stderr, "Audio: Wanted to load Audio Group %d, but Audio Group %d does not exist!\n", groupIndex, groupIndex);
             return;
         }
 
         DataWinParserOptions options = {0};
-        options.parseAudo = false;
-        options.lazyLoadAudio = audio->dw->lazyLoadAudio;
-        if (audio->dw->mappedFile)
-            options.loadType = DATAWINLOADTYPE_MAP_FILE;
+        options.parseAudo = true;
         DataWin *audioGroup = DataWin_parse(((MaAudioSystem*)audio)->fileSystem->vtable->resolvePath(((MaAudioSystem*)audio)->fileSystem, buf), options);
         arrput(audio->audioGroups, audioGroup);
-        free(buf);
-    } else {
-        logWarn("Audio: Wanted to load Audio Group %d, but Audio Group %d does not exist in the AGPR!\n", groupIndex, groupIndex);
     }
 }
 
@@ -823,23 +653,21 @@ static int32_t maCreateStream(AudioSystem* audio, const char* filename) {
     }
 
     if (0 > freeSlot) {
-        logWarn("Audio: No free stream slots for '%s'\n", filename);
+        fprintf(stderr, "Audio: No free stream slots for '%s'\n", filename);
         return -1;
     }
 
     char* resolved = ma->fileSystem->vtable->resolvePath(ma->fileSystem, filename);
     if (resolved == nullptr) {
-        logWarn("Audio: Could not resolve path for stream '%s'\n", filename);
+        fprintf(stderr, "Audio: Could not resolve path for stream '%s'\n", filename);
         return -1;
     }
 
     ma->streams[freeSlot].active = true;
     ma->streams[freeSlot].filePath = resolved;
-    ma->streams[freeSlot].initialGain = 1.0f;
-    ma->streams[freeSlot].initialPitch = 1.0f;
 
     int32_t streamIndex = AUDIO_STREAM_INDEX_BASE + freeSlot;
-    logInfo("Audio: Created stream %d for '%s' -> '%s'\n", streamIndex, filename, resolved);
+    fprintf(stderr, "Audio: Created stream %d for '%s' -> '%s'\n", streamIndex, filename, resolved);
     return streamIndex;
 }
 
@@ -848,7 +676,7 @@ static bool maDestroyStream(AudioSystem* audio, int32_t streamIndex) {
 
     int32_t slotIndex = streamIndex - AUDIO_STREAM_INDEX_BASE;
     if (0 > slotIndex || slotIndex >= MAX_AUDIO_STREAMS) {
-        logWarn("Audio: Invalid stream index %d for destroy\n", streamIndex);
+        fprintf(stderr, "Audio: Invalid stream index %d for destroy\n", streamIndex);
         return false;
     }
 
@@ -871,7 +699,7 @@ static bool maDestroyStream(AudioSystem* audio, int32_t streamIndex) {
     free(entry->filePath);
     entry->filePath = nullptr;
     entry->active = false;
-    logInfo("Audio: Destroyed stream %d\n", streamIndex);
+    fprintf(stderr, "Audio: Destroyed stream %d\n", streamIndex);
     return true;
 }
 
@@ -882,8 +710,7 @@ static AudioSystemVtable maAudioSystemVtable;
 // ===[ Lifecycle ]===
 
 MaAudioSystem* MaAudioSystem_create(DataWin* dataWin) {
-    MaAudioSystem* ma = (MaAudioSystem *)safeCalloc(1, sizeof(MaAudioSystem));
-    ma->base.dw = dataWin;
+    MaAudioSystem* ma = safeCalloc(1, sizeof(MaAudioSystem));
     maAudioSystemVtable.init = maInit;
     maAudioSystemVtable.destroy = maDestroy;
     maAudioSystemVtable.update = maUpdate;
@@ -905,7 +732,6 @@ MaAudioSystem* MaAudioSystem_create(DataWin* dataWin) {
     maAudioSystemVtable.setTrackPosition = maSetTrackPosition;
     maAudioSystemVtable.getSoundLength = maGetSoundLength;
     maAudioSystemVtable.setMasterGain = maSetMasterGain;
-    maAudioSystemVtable.setMasterGainForListener = maSetMasterGainForListener;
     maAudioSystemVtable.setChannelCount = maSetChannelCount;
     maAudioSystemVtable.groupLoad = maGroupLoad;
     maAudioSystemVtable.groupIsLoaded = maGroupIsLoaded;

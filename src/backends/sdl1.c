@@ -11,6 +11,10 @@
 #include <GL/gl.h>
 #include <dlfcn.h>
 
+#ifndef EGL_OPENGL_ES1_BIT
+#define EGL_OPENGL_ES1_BIT 0x0001
+#endif
+
 #include "common.h"
 #include "input_recording.h"
 #include "platformdefs.h"
@@ -28,6 +32,12 @@ static Runner *g_runner;
 static int32_t fbWidth, fbHeight;
 static SDL_Surface* scr;
 static SDL_Joystick* openJoysticks[MAX_GAMEPADS];
+
+// Handle to gl4es's libGL.so.1, captured at init so platformGetProcAddress()
+// below can dlsym straight off it instead of relying solely on
+// SDL_GL_GetProcAddress(), whose underlying resolution path on this target
+// (Nexell VR5 / gl4es) hasn't been verified.
+static void *g_gl4esHandle = NULL;
 
 typedef struct {
     bool valid;
@@ -139,10 +149,6 @@ static void parseMappingField(GamepadMapping* mapping, const char* key, const ch
 #endif
 
 static void loadGamepadMappings(void) {
-<<<<<<< HEAD:src/desktop/backends/sdl1.c
-	//STUBBED OUT
-	return;
-=======
     const char* dbPath = "gamecontrollerdb.txt";
     FILE* f = fopen(dbPath, "rb");
     if (!f) {
@@ -209,7 +215,6 @@ static void loadGamepadMappings(void) {
         }
     }
     fclose(f);
->>>>>>> 79bfdca7f24e3071d1028c45313c33d5511d644e:src/backends/sdl1.c
 }
 void platformSetWindowTitle(const char* title) {
     char windowTitle[256];
@@ -254,6 +259,20 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
         return false;
     }
 
+    // --- Load the real VR5 driver + gl4es *before* SDL touches anything
+    // GL-related. SDL_SetVideoMode(..., SDL_OPENGL, ...) below may probe
+    // or bind GL symbols as soon as it's called, so libvr5.so must already
+    // be resident and globally visible (gl4es resolves it internally via
+    // dlsym), and gl4es's own libGL.so.1 must already be loaded too.
+    fprintf(stderr, "=== [BUTTERSCOTCH] Loading VR5 driver / gl4es ===\n");
+    if (!dlopen("libvr5.so", RTLD_LAZY | RTLD_GLOBAL)) {
+        logWarn("[BUTTERSCOTCH] WARNING: dlopen('libvr5.so') failed: %s\n", dlerror());
+    }
+    g_gl4esHandle = dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL);
+    if (!g_gl4esHandle) {
+        logWarn("[BUTTERSCOTCH] WARNING: dlopen('libGL.so.1') failed: %s\n", dlerror());
+    }
+
     // Init SDL
     if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_JOYSTICK)) {
         logError("Failed to initialize SDL\n");
@@ -294,14 +313,7 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
         }
     }
 
-    // --- EGL & gl4es Hardware Initialization ---
-    fprintf(stderr, "=== [BUTTERSCOTCH] Initializing EGL/gl4es Context ===\n");
-    dlopen("libvr5.so", RTLD_LAZY | RTLD_GLOBAL);
-    void *gl_handle = dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL);
-    if (!gl_handle) {
-        logWarn("[BUTTERSCOTCH] WARNING: dlopen('libGL.so.1') failed: %s\n", dlerror());
-    }
-
+    // --- EGL Context Setup ---
     EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (display != EGL_NO_DISPLAY) {
         EGLint major, minor;
@@ -323,10 +335,15 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
                 } else {
                     logError("[BUTTERSCOTCH] ERROR: Failed to create EGL context or window surface.\n");
                 }
+            } else {
+                logError("[BUTTERSCOTCH] ERROR: eglChooseConfig failed or found 0 configs (Error: 0x%X)\n", eglGetError());
             }
+        } else {
+            logError("[BUTTERSCOTCH] ERROR: eglInitialize failed (Error: 0x%X)\n", eglGetError());
         }
+    } else {
+        logError("[BUTTERSCOTCH] ERROR: eglGetDisplay returned EGL_NO_DISPLAY\n");
     }
-    // ------------------------------------------
     SDL_WM_SetCaption(title, NULL);
 
     SDL_EnableKeyRepeat(0, 0);
@@ -399,6 +416,15 @@ void platformSwapBuffers(void) {
 #if defined(ENABLE_MODERN_GL) || defined(ENABLE_LEGACY_GL)
 
 void *platformGetProcAddress(const char *name) {
+    // Prefer resolving straight off gl4es's handle: it's the specific
+    // libGL.so.1 dlopen'd in platformInit(), so this guarantees GLAD (or
+    // anything else calling this) binds to gl4es rather than whatever
+    // SDL_GL_GetProcAddress's resolution path happens to find on this
+    // target, which hasn't been verified.
+    if (g_gl4esHandle) {
+        void *sym = dlsym(g_gl4esHandle, name);
+        if (sym) return sym;
+    }
     return SDL_GL_GetProcAddress(name);
 }
 
