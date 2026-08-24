@@ -215,6 +215,10 @@ set_target_properties(EGL PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "/home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include"
 )
 
+target_include_directories(butterscotch PRIVATE
+    /home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include
+)
+
 # Base64 implementation
 target_sources(butterscotch PRIVATE vendor/base64/base64.c)
 target_include_directories(butterscotch PUBLIC vendor/base64)
