@@ -11,8 +11,37 @@
 #include <GL/gl.h>
 #include <dlfcn.h>
 
+// gl4es's bundled EGL/egl.h (see INTERFACE_INCLUDE_DIRECTORIES on the EGL
+// target in CMakeLists.txt) doesn't define all of these -- confirmed at
+// least EGL_OPENGL_ES1_BIT is missing. Guarding all nine defensively,
+// matching the working gl4es testbed reference, in case others are missing
+// too but haven't been hit yet.
+#ifndef EGL_SURFACE_TYPE
+#define EGL_SURFACE_TYPE 0x3033
+#endif
+#ifndef EGL_WINDOW_BIT
+#define EGL_WINDOW_BIT 0x0004
+#endif
+#ifndef EGL_RENDERABLE_TYPE
+#define EGL_RENDERABLE_TYPE 0x3040
+#endif
 #ifndef EGL_OPENGL_ES1_BIT
 #define EGL_OPENGL_ES1_BIT 0x0001
+#endif
+#ifndef EGL_RED_SIZE
+#define EGL_RED_SIZE 0x3024
+#endif
+#ifndef EGL_GREEN_SIZE
+#define EGL_GREEN_SIZE 0x3023
+#endif
+#ifndef EGL_BLUE_SIZE
+#define EGL_BLUE_SIZE 0x3022
+#endif
+#ifndef EGL_ALPHA_SIZE
+#define EGL_ALPHA_SIZE 0x3021
+#endif
+#ifndef EGL_DEPTH_SIZE
+#define EGL_DEPTH_SIZE 0x3025
 #endif
 
 #include "common.h"
@@ -265,11 +294,25 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
     // be resident and globally visible (gl4es resolves it internally via
     // dlsym), and gl4es's own libGL.so.1 must already be loaded too.
     fprintf(stderr, "=== [BUTTERSCOTCH] Loading VR5 driver / gl4es ===\n");
-    if (!dlopen("libvr5.so", RTLD_LAZY | RTLD_GLOBAL)) {
+    // libcompat_shim.so must load first, with RTLD_GLOBAL, before anything
+    // touches vr5/EGL. It provides __ctype_b / __fgetc_unlocked (libc
+    // symbols libvr5.so needs that this toolchain's libc doesn't export
+    // directly) and also interposes eglInitialize itself -- loading it
+    // after libEGL.so would let libEGL.so's own eglInitialize bind first.
+    if (dlopen("libcompat_shim.so", RTLD_LAZY | RTLD_GLOBAL)) {
+        fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: dlopen('libcompat_shim.so')\n");
+    } else {
+        logWarn("[BUTTERSCOTCH] WARNING: dlopen('libcompat_shim.so') failed: %s\n", dlerror());
+    }
+    if (dlopen("libvr5.so", RTLD_LAZY | RTLD_GLOBAL)) {
+        fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: dlopen('libvr5.so')\n");
+    } else {
         logWarn("[BUTTERSCOTCH] WARNING: dlopen('libvr5.so') failed: %s\n", dlerror());
     }
     g_gl4esHandle = dlopen("libGL.so.1", RTLD_LAZY | RTLD_GLOBAL);
-    if (!g_gl4esHandle) {
+    if (g_gl4esHandle) {
+        fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: dlopen('libGL.so.1') at %p\n", g_gl4esHandle);
+    } else {
         logWarn("[BUTTERSCOTCH] WARNING: dlopen('libGL.so.1') failed: %s\n", dlerror());
     }
 
@@ -318,6 +361,7 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
     if (display != EGL_NO_DISPLAY) {
         EGLint major, minor;
         if (eglInitialize(display, &major, &minor)) {
+            fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: EGL Initialized (Version %d.%d)\n", major, minor);
             const EGLint attribs[] = {
                 EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
                 EGL_RENDERABLE_TYPE, EGL_OPENGL_ES1_BIT,
@@ -327,13 +371,52 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
             EGLConfig config;
             EGLint numConfigs;
             if (eglChooseConfig(display, attribs, &config, 1, &numConfigs) && numConfigs > 0) {
+                fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: eglChooseConfig found valid config (Count: %d)\n", numConfigs);
                 EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, NULL);
-                EGLSurface surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)NULL, NULL);
-                if (context != EGL_NO_CONTEXT && surface != EGL_NO_SURFACE) {
-                    eglMakeCurrent(display, surface, surface, context);
-                    fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: EGL Context and Surface made current!\n");
+                if (context == EGL_NO_CONTEXT) {
+                    logError("[BUTTERSCOTCH] ERROR: eglCreateContext failed (Error: 0x%X)\n", eglGetError());
                 } else {
-                    logError("[BUTTERSCOTCH] ERROR: Failed to create EGL context or window surface.\n");
+                    fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: EGL Context created (%p)\n", context);
+                }
+                EGLSurface surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)NULL, NULL);
+                if (surface == EGL_NO_SURFACE) {
+                    logError("[BUTTERSCOTCH] ERROR: eglCreateWindowSurface failed (Error: 0x%X)\n", eglGetError());
+                } else {
+                    fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: EGL Window Surface created (%p)\n", surface);
+                }
+                if (context != EGL_NO_CONTEXT && surface != EGL_NO_SURFACE) {
+                    // NOTE: eglMakeCurrent's return value used to be
+                    // discarded here, so this always printed SUCCESS
+                    // whether or not it actually was one.
+                    if (eglMakeCurrent(display, surface, surface, context)) {
+                        fprintf(stderr, "[BUTTERSCOTCH] SUCCESS: EGL Context and Surface made current!\n");
+
+                        // Definitive end-to-end check: if this prints real
+                        // values (not a segfault, not empty strings), the
+                        // whole libcompat_shim.so -> libvr5.so -> gl4es ->
+                        // EGL chain is genuinely alive, not just each piece
+                        // individually loading without error. Resolved via
+                        // dlsym rather than a direct call since GLAD hasn't
+                        // been initialized yet at this point -- this
+                        // mirrors the gl4es testbed's own diagnostic dump.
+                        if (g_gl4esHandle) {
+                            typedef const char* (*PFNGLGETSTRINGPROC)(unsigned int);
+                            PFNGLGETSTRINGPROC glGetString_ = (PFNGLGETSTRINGPROC)dlsym(g_gl4esHandle, "glGetString");
+                            if (glGetString_) {
+                                fprintf(stderr, "----------------------------------------\n");
+                                fprintf(stderr, "[BUTTERSCOTCH] GL Vendor:   %s\n", glGetString_(0x1F00) /* GL_VENDOR */);
+                                fprintf(stderr, "[BUTTERSCOTCH] GL Renderer: %s\n", glGetString_(0x1F01) /* GL_RENDERER */);
+                                fprintf(stderr, "[BUTTERSCOTCH] GL Version:  %s\n", glGetString_(0x1F02) /* GL_VERSION */);
+                                fprintf(stderr, "----------------------------------------\n");
+                            } else {
+                                logError("[BUTTERSCOTCH] ERROR: dlsym('glGetString') off gl4es handle failed -- gl4es is loaded but may not be functional\n");
+                            }
+                        }
+                    } else {
+                        logError("[BUTTERSCOTCH] ERROR: eglMakeCurrent failed (Error: 0x%X)\n", eglGetError());
+                    }
+                } else {
+                    logError("[BUTTERSCOTCH] ERROR: Skipping eglMakeCurrent -- context or surface creation failed above.\n");
                 }
             } else {
                 logError("[BUTTERSCOTCH] ERROR: eglChooseConfig failed or found 0 configs (Error: 0x%X)\n", eglGetError());
@@ -411,6 +494,35 @@ void platformSwapBuffers(void) {
     if (gfx == LEGACY_GL || gfx == MODERN_GL)
         SDL_GL_SwapBuffers();
 #endif
+}
+
+#include "log.h"
+
+// Inferred signature: log.h declares logInfo/vLogInfo/logWarn/vLogWarn/
+// logError/vLogError/logDebug/vLogDebug but not platformLog itself, since
+// it's a per-backend implementation detail. This signature is inferred
+// from log.c's calling pattern (each variant formats into a va_list and
+// funnels through one primitive) plus the logType enum and ANSI colour
+// codes already sitting in log.h with nothing else to consume them. If
+// this doesn't link/behave correctly, log.c's actual call sites are the
+// next thing to check.
+void platformLog(logType type, const char* fmt, va_list args) {
+    const char* colour = "";
+    switch (type) {
+        case LOG_TYPE_WARNING: colour = ANSI_COLOUR_CODE_BOLD_YELLOW; break;
+        case LOG_TYPE_ERROR:   colour = ANSI_COLOUR_CODE_BOLD_RED;    break;
+        case LOG_TYPE_DEBUG:   colour = ANSI_COLOUR_CODE_BOLD_PURPLE; break;
+        case LOG_TYPE_NORMAL:
+        default:
+            break;
+    }
+    if (colour[0]) fputs(colour, stderr);
+    vfprintf(stderr, fmt, args);
+    if (colour[0]) fputs(ANSI_COLOUR_CODE_RESET, stderr);
+    // No trailing '\n' here -- every logXxx() call site in this codebase
+    // already includes one in its format string (e.g. loadGamepadMappings'
+    // logWarn("...ignoring mappings\n", ...) above), so adding one here
+    // would double them up.
 }
 
 #if defined(ENABLE_MODERN_GL) || defined(ENABLE_LEGACY_GL)
