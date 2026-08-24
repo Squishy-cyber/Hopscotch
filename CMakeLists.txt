@@ -346,6 +346,37 @@ if(PLATFORM STREQUAL "cli" OR PLATFORM STREQUAL "vita" OR PLATFORM STREQUAL "des
     elseif(NOT PLATFORM STREQUAL "vita")
         set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} ${CMAKE_DL_LIBS})
     endif()
+    if(PLATFORM STREQUAL "desktop")
+        # NOTE: there is an `elseif(PLATFORM STREQUAL "desktop")` further
+        # down in this file (originally around line 808) that also tries to
+        # link EGL -- it is dead code. It's part of the same if/elseif/else
+        # chain that starts with `if(PLATFORM STREQUAL "cli" OR ... OR
+        # PLATFORM STREQUAL "desktop")` above, so "desktop" already matches
+        # that very first condition and this whole chain short-circuits
+        # there. That later branch can never execute for any PLATFORM
+        # value. Safe to delete once this is confirmed working.
+        #
+        # stdc++ is required because libEGL.so / libvr5.so are C++
+        # libraries (see their mangled symbol names), but this project
+        # links as C (`project(butterscotch C)`), so the C++ runtime
+        # (operator new/delete, __gxx_personality_v0, __cxa_pure_virtual,
+        # RTTI vtables) isn't pulled in automatically. Same reasoning as
+        # why the vita branch below links stdc++ for vitaGL.
+        set(PLATFORM_LIBRARIES ${PLATFORM_LIBRARIES} EGL stdc++)
+        # libEGL.so / libvr5.so are proprietary Leapfrog blobs that reference
+        # a handful of symbols (__ctype_b, __fgetc_unlocked) only satisfied
+        # at runtime, by dlopen'ing libcompat_shim.so with RTLD_GLOBAL
+        # before anything touches EGL/vr5 (see sdl1.c platformInit). The
+        # known-working cube_test reference binary never links vr5 or the
+        # shim at build time at all -- confirmed via its NEEDED list, which
+        # doesn't contain either -- so its link must not be strictly
+        # resolving symbols that libEGL.so itself references internally.
+        # --allow-shlib-undefined reproduces that: don't fail on unresolved
+        # symbols coming from inside a linked .so's own dependencies, only
+        # fail on symbols this project's own object files reference
+        # directly.
+        target_link_options(butterscotch PRIVATE -Wl,--allow-shlib-undefined)
+    endif()
 
     if(BACKEND STREQUAL "glfw3")
         add_compile_definitions(USE_GLFW3)
