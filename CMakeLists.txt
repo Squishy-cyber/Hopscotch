@@ -210,10 +210,15 @@ add_library(sha1 STATIC vendor/sha1/sha1.c)
 target_include_directories(sha1 SYSTEM PUBLIC vendor/sha1)
 target_compile_options(sha1 PRIVATE -w)
 
-# Import prebuilt EGL shared library from Buildroot staging/target output
+# Import prebuilt EGL shared library from Buildroot's HOST sysroot (the tree
+# the cross-linker actually resolves against at link time). This previously
+# pointed at output/target/usr/lib, which is the target rootfs staging tree,
+# not the sysroot the linker reads from -- that mismatch is what caused
+# "undefined reference to eglGetDisplay" etc. at link time even though the
+# library itself was present on disk.
 add_library(EGL SHARED IMPORTED)
 set_target_properties(EGL PROPERTIES
-    IMPORTED_LOCATION "/home/squishy/src/leapfrog/retroleap/output/target/usr/lib/libEGL.so"
+    IMPORTED_LOCATION "/home/squishy/src/leapfrog/retroleap/output/host/arm-buildroot-linux-gnueabi/sysroot/usr/lib/libEGL.so"
     INTERFACE_INCLUDE_DIRECTORIES "/home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include"
 )
 
