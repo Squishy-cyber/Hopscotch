@@ -208,6 +208,10 @@ add_library(sha1 STATIC vendor/sha1/sha1.c)
 target_include_directories(sha1 SYSTEM PUBLIC vendor/sha1)
 target_compile_options(sha1 PRIVATE -w)
 
+# GL4ES EGL Headers
+add_library(gl4es_egl INTERFACE)
+target_include_directories(gl4es_egl SYSTEM INTERFACE /home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include)
+
 # Base64 implementation
 target_sources(butterscotch PRIVATE vendor/base64/base64.c)
 target_include_directories(butterscotch PUBLIC vendor/base64)
@@ -786,7 +790,7 @@ elseif(PLATFORM STREQUAL "ps3")
     target_link_libraries(butterscotch PRIVATE bzip2 sha1 ps3gl mojoal ${SDL2_LIBRARIES} gcm_sys rsx sysutil io audio rt lv2 m stb_ds stb_vorbis)
 elseif(PLATFORM STREQUAL "vita")
 elseif(PLATFORM STREQUAL "desktop")
-    target_link_libraries(butterscotch PRIVATE SDL stb_ds ${PLATFORM_LIBRARIES} m dl)
+    target_link_libraries(butterscotch PRIVATE SDL stb_ds ${PLATFORM_LIBRARIES} m gl4es_egl dl)
 else()
     message(FATAL_ERROR "Unknown platform! ${PLATFORM}")
 endif()
