@@ -318,7 +318,12 @@ bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) 
 
     // Init SDL
     if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER|SDL_INIT_JOYSTICK)) {
-        logError("Failed to initialize SDL\n");
+        // Previously just logged "Failed to initialize SDL" with no detail
+        // -- SDL_GetError() actually says why (wrong SDL_VIDEODRIVER name,
+        // /dev/fb0 permissions, device already in use, etc.), which matters
+        // a lot here since SDL_VIDEODRIVER/SDL_FBDEV are force-set by the
+        // launch script rather than left to auto-detect.
+        logError("Failed to initialize SDL: %s\n", SDL_GetError());
         return false;
     }
 
