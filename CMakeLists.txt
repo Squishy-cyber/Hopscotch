@@ -216,19 +216,22 @@ target_compile_options(sha1 PRIVATE -w)
 # not the sysroot the linker reads from -- that mismatch is what caused
 # "undefined reference to eglGetDisplay" etc. at link time even though the
 # library itself was present on disk.
-add_library(EGL SHARED IMPORTED)
-set_target_properties(EGL PROPERTIES
-    IMPORTED_LOCATION "/home/squishy/src/leapfrog/retroleap/output/host/arm-buildroot-linux-gnueabi/sysroot/usr/lib/libEGL.so"
-    # Without this, CMake has nothing else to go on for an IMPORTED target
-    # and embeds the literal IMPORTED_LOCATION path above as the NEEDED
-    # entry in the linked binary -- which is the build machine's own
-    # sysroot path, meaningless on the actual device. This forces just the
-    # basename to be recorded instead, so the dynamic loader searches
-    # standard runtime paths (where libEGL.so actually exists on the
-    # Leapster) the same way a plain `-lEGL` link already does.
-    IMPORTED_SONAME "libEGL.so"
-    INTERFACE_INCLUDE_DIRECTORIES "/home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include"
-)
+# NOTE: this used to be `add_library(EGL SHARED IMPORTED)` with
+# IMPORTED_LOCATION pointing at the path below. That doesn't work: CMake's
+# IMPORTED_SONAME property is CMake-level bookkeeping only (RPATH
+# computation etc.) -- it does NOT control what the linker writes into
+# DT_NEEDED. That's determined by `ld` reading the target .so's own
+# embedded SONAME field off disk, and falling back to the literal path it
+# was given if there isn't one. libEGL.so (proprietary Leapfrog blob) has
+# no embedded SONAME, so IMPORTED_LOCATION's full build-machine path always
+# got baked into the final binary regardless of IMPORTED_SONAME, breaking
+# it on the actual device.
+#
+# Fix: link the same way the known-working cube_test reference does --
+# `-L<dir> -lEGL`, a search path plus a bare name, so `ld` records just the
+# name it was told to search for rather than a path derived from a found
+# file with no SONAME of its own.
+link_directories("/home/squishy/src/leapfrog/retroleap/output/host/arm-buildroot-linux-gnueabi/sysroot/usr/lib")
 
 target_include_directories(butterscotch PRIVATE
     /home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include
