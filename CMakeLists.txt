@@ -219,6 +219,14 @@ target_compile_options(sha1 PRIVATE -w)
 add_library(EGL SHARED IMPORTED)
 set_target_properties(EGL PROPERTIES
     IMPORTED_LOCATION "/home/squishy/src/leapfrog/retroleap/output/host/arm-buildroot-linux-gnueabi/sysroot/usr/lib/libEGL.so"
+    # Without this, CMake has nothing else to go on for an IMPORTED target
+    # and embeds the literal IMPORTED_LOCATION path above as the NEEDED
+    # entry in the linked binary -- which is the build machine's own
+    # sysroot path, meaningless on the actual device. This forces just the
+    # basename to be recorded instead, so the dynamic loader searches
+    # standard runtime paths (where libEGL.so actually exists on the
+    # Leapster) the same way a plain `-lEGL` link already does.
+    IMPORTED_SONAME "libEGL.so"
     INTERFACE_INCLUDE_DIRECTORIES "/home/squishy/src/leapfrog/retroleap/output/build/xash3d-fwgs-origin_master/3rdparty/gl4es/gl4es/include"
 )
 
